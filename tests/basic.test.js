@@ -24,7 +24,7 @@ test("Basic - Set function", async t => {
   const result = await rexp.set("set_expiration", "now_call");
   t.deepEqual(
     Object.keys(result),
-    ["now", "at", "timeout"],
+    ["now", "at", "cron", "timeout"],
     "Invalid method returned"
   );
 });
@@ -39,12 +39,12 @@ test("Expiration - Now function", async t => {
     rexp.on("set_expiration_for_now", value => {
       const newTime = new Date();
       t.is(value, valueForNow, "Expected value is not consistent");
-      if (newTime.getTime() - currentTime.getTime() < 500) {
+      if (newTime.getTime() - currentTime.getTime() < 999) {
         return resolve();
       }
       return reject();
     });
-    setTimeout(reject, 500);
+    setTimeout(reject, 999);
   })
     .then(() => t.pass())
     .catch(() => t.fail(`"now" function take too much time`));
@@ -68,13 +68,13 @@ test("Expiration - Timeout function", async t => {
       t.is(value, valueForTimeout, "Expected value is not consistent");
       if (
         newTime.getTime() - currentTime.getTime() >= 1000 &&
-        newTime.getTime() - currentTime.getTime() < 1500
+        newTime.getTime() - currentTime.getTime() < 1999
       ) {
         return resolve();
       }
       return reject();
     });
-    setTimeout(reject, 1500);
+    setTimeout(reject, 1999);
   })
     .then(() => t.pass())
     .catch(() => t.fail(`"timeout" function take too much time`));
@@ -83,6 +83,42 @@ test("Expiration - Timeout function", async t => {
     verifyKeyAgain,
     [],
     `"set_expiration_for_timeout" key hasn't been removed`
+  );
+});
+
+const valueForCron = "cron_call";
+test("Expiration - Cron function", async t => {
+  const verifyKey = await rexp.get("set_expiration_for_cron");
+  t.deepEqual(verifyKey, [], `"set_expiration_for_cron" key already exists`);
+  const currentTime = new Date();
+  const timeoutCron =
+    (4 -
+      ((currentTime.getSeconds() % 4) +
+        currentTime.getMilliseconds() * 0.001)) *
+      1000 -
+    100;
+  await rexp.set("set_expiration_for_cron", valueForCron).cron("*/4 * * * * *");
+  await new Promise((resolve, reject) => {
+    rexp.on("set_expiration_for_cron", value => {
+      const newTime = new Date();
+      t.is(value, valueForCron, "Expected value is not consistent");
+      if (
+        newTime.getTime() - currentTime.getTime() >= timeoutCron &&
+        newTime.getTime() - currentTime.getTime() < timeoutCron + 999
+      ) {
+        return resolve();
+      }
+      return reject();
+    });
+    setTimeout(reject, timeoutCron + 999);
+  })
+    .then(() => t.pass())
+    .catch(() => t.fail(`"cron" function take too much time`));
+  const verifyKeyAgain = await rexp.get("set_expiration_for_cron");
+  t.deepEqual(
+    verifyKeyAgain,
+    [],
+    `"set_expiration_for_cron" key hasn't been removed`
   );
 });
 
@@ -100,13 +136,13 @@ test("Expiration - At function", async t => {
       t.is(value, valueForAt, "Expected value is not consistent");
       if (
         newTime.getTime() - currentTime.getTime() >= 3000 &&
-        newTime.getTime() - currentTime.getTime() < 3500
+        newTime.getTime() - currentTime.getTime() < 3999
       ) {
         return resolve();
       }
       return reject();
     });
-    setTimeout(reject, 3500);
+    setTimeout(reject, 3999);
   })
     .then(() => t.pass())
     .catch(() => t.fail(`"at" function take too much time`));

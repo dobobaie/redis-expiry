@@ -1,5 +1,6 @@
 const Promise = require("bluebird");
 const shortid = require("shortid");
+const cronParser = require("cron-parser");
 const Redis = require("redis");
 
 Promise.promisifyAll(Redis.RedisClient.prototype);
@@ -9,13 +10,22 @@ module.exports = (redis, options) => {
   this.natif = redis;
 
   this.set = (key, value) => ({
-    now: async () => this.set(key, value).timeout(1),
-    at: async date => {
+    now: () => this.set(key, value).timeout(1),
+    at: date => {
       const currentDate = new Date().getTime();
       const ndate = date ? new Date(date).getTime() : currentDate;
       const calculTimeout = ndate - currentDate <= 0 ? 1 : ndate - currentDate;
       return this.set(key, value).timeout(calculTimeout);
     },
+    cron: expression =>
+      this.set(key, value).at(
+        new Date(
+          cronParser
+            .parseExpression(expression)
+            .next()
+            .toString()
+        )
+      ),
     timeout: async time => {
       const ntime = time || 1;
       const currentDate = new Date();
@@ -50,7 +60,7 @@ module.exports = (redis, options) => {
         }, {})
     );
 
-  this.getByGuuid = async (key, guuid) => {
+  this.getByKeyGuuid = async (key, guuid) => {
     const redisValue = await redis.getAsync(`${key}_${guuid}_value`);
     const redisGuuid = await redis.getAsync(`${key}_${guuid}_guuid`);
     const redisExpiration = await redis.getAsync(`${key}_${guuid}_expiration`);
@@ -71,10 +81,10 @@ module.exports = (redis, options) => {
     (await Promise.map(await getAllGuuid(key), async guuid => {
       const redisValue = await redis.getAsync(`${key}_${guuid}_value`);
       if (value && value !== redisValue) return null;
-      return this.getByGuuid(key, guuid);
+      return this.getByKeyGuuid(key, guuid);
     })).filter(elem => elem !== null);
 
-  this.delByGuuid = async (key, guuid) =>
+  this.delByKeyGuuid = async (key, guuid) =>
     Promise.all([
       redis.del(`${key}_${guuid}`),
       redis.del(`${key}_${guuid}_value`),
@@ -88,7 +98,7 @@ module.exports = (redis, options) => {
     Promise.map(await getAllGuuid(key), async guuid => {
       const redisValue = await redis.getAsync(`${key}_${guuid}_value`);
       if (value && value !== redisValue) return null;
-      return this.delByGuuid(key, guuid);
+      return this.delByKeyGuuid(key, guuid);
     });
 
   const listEvents = {};
@@ -106,7 +116,7 @@ module.exports = (redis, options) => {
 
     if (listEvents[key]) {
       listEvents[key].map(async cb => cb(value, key));
-      await this.delByGuuid(key, guuid);
+      await this.delByKeyGuuid(key, guuid);
     }
   });
   redisSubscriber.psubscribe("__keyevent@0__:expired");

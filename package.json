@@ -1,6 +1,6 @@
 {
   "name": "redis-expiry",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Use redis to expire your keys and handling the value ",
   "main": "index.js",
   "scripts": {
@@ -37,6 +37,7 @@
   "homepage": "https://github.com/dobobaie/redis-expiry#readme",
   "dependencies": {
     "bluebird": "^3.5.3",
+    "cron-parser": "^2.7.3",
     "redis": "^2.8.0",
     "shortid": "^2.2.14"
   },
