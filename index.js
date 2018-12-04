@@ -9,38 +9,46 @@ Promise.promisifyAll(Redis.Multi.prototype);
 module.exports = (redis, options) => {
   this.natif = redis;
 
+  const scheduleEvent = (expirationType, expirationValue) => (
+    key,
+    value,
+    timeout
+  ) => {
+    const currentDate = new Date().getTime();
+    const guuid = shortid.generate().replace(/_/g, "-");
+    return Promise.all([
+      redis.setAsync(`${key}_${guuid}`, "", "PX", timeout),
+      redis.setAsync(`${key}_${guuid}_guuid`, guuid),
+      redis.setAsync(`${key}_${guuid}_value`, value),
+      redis.setAsync(`${key}_${guuid}_expiration`, timeout),
+      redis.setAsync(`${key}_${guuid}_expiration_type`, expirationType),
+      redis.setAsync(`${key}_${guuid}_expiration_value`, expirationValue),
+      redis.setAsync(`${key}_${guuid}_create_at`, currentDate),
+      redis.setAsync(
+        `${key}_${guuid}_expiration_at`,
+        currentDate + timeout * 100
+      )
+    ]);
+  };
+
   this.set = (key, value) => ({
-    now: () => this.set(key, value).timeout(1),
+    timeout: time => scheduleEvent("TIMEOUT", time)(key, value, time || 1),
+    now: () => scheduleEvent("NOW", 1)(key, value, 1),
     at: date => {
       const currentDate = new Date().getTime();
       const ndate = date ? new Date(date).getTime() : currentDate;
       const calculTimeout = ndate - currentDate <= 0 ? 1 : ndate - currentDate;
-      return this.set(key, value).timeout(calculTimeout);
+      return scheduleEvent("AT", date)(key, value, calculTimeout);
     },
-    cron: expression =>
-      this.set(key, value).at(
-        new Date(
-          cronParser
-            .parseExpression(expression)
-            .next()
-            .toString()
-        )
-      ),
-    timeout: async time => {
-      const ntime = time || 1;
-      const currentDate = new Date();
-      const guuid = shortid.generate().replace(/_/g, "-");
-      return Promise.all([
-        redis.setAsync(`${key}_${guuid}`, "", "PX", ntime),
-        redis.setAsync(`${key}_${guuid}_guuid`, guuid),
-        redis.setAsync(`${key}_${guuid}_value`, value),
-        redis.setAsync(`${key}_${guuid}_expiration`, ntime),
-        redis.setAsync(`${key}_${guuid}_create_at`, currentDate.getTime()),
-        redis.setAsync(
-          `${key}_${guuid}_expiration_at`,
-          currentDate.getTime() + ntime * 100
-        )
-      ]);
+    cron: expression => {
+      const date = cronParser
+        .parseExpression(expression)
+        .next()
+        .toString();
+      const currentDate = new Date().getTime();
+      const ndate = date ? new Date(date).getTime() : currentDate;
+      const calculTimeout = ndate - currentDate <= 0 ? 1 : ndate - currentDate;
+      return scheduleEvent("CRON", expression)(key, value, calculTimeout);
     }
   });
 
@@ -64,6 +72,12 @@ module.exports = (redis, options) => {
     const redisValue = await redis.getAsync(`${key}_${guuid}_value`);
     const redisGuuid = await redis.getAsync(`${key}_${guuid}_guuid`);
     const redisExpiration = await redis.getAsync(`${key}_${guuid}_expiration`);
+    const redisExpirationType = await redis.getAsync(
+      `${key}_${guuid}_expiration_type`
+    );
+    const redisExpirationValue = await redis.getAsync(
+      `${key}_${guuid}_expiration_value`
+    );
     const redisCreatedAt = await redis.getAsync(`${key}_${guuid}_create_at`);
     const redisExpirationAt = await redis.getAsync(
       `${key}_${guuid}_expiration_at`
@@ -72,6 +86,8 @@ module.exports = (redis, options) => {
       guuid: redisGuuid,
       value: redisValue,
       expiration: parseFloat(redisExpiration),
+      expiration_type: redisExpirationType,
+      expiration_value: redisExpirationValue,
       created_at: parseFloat(redisCreatedAt),
       expiration_at: parseFloat(redisExpirationAt)
     };
@@ -80,16 +96,18 @@ module.exports = (redis, options) => {
   this.get = async (key, value) =>
     (await Promise.map(await getAllGuuid(key), async guuid => {
       const redisValue = await redis.getAsync(`${key}_${guuid}_value`);
-      if (value && value !== redisValue) return null;
+      if (!redisValue || (value && value !== redisValue)) return null;
       return this.getByKeyGuuid(key, guuid);
     })).filter(elem => elem !== null);
 
-  this.delByKeyGuuid = async (key, guuid) =>
+  this.delByKeyGuuid = (key, guuid) =>
     Promise.all([
       redis.del(`${key}_${guuid}`),
       redis.del(`${key}_${guuid}_value`),
       redis.del(`${key}_${guuid}_guuid`),
       redis.del(`${key}_${guuid}_expiration`),
+      redis.del(`${key}_${guuid}_expiration_type`),
+      redis.del(`${key}_${guuid}_expiration_value`),
       redis.del(`${key}_${guuid}_create_at`),
       redis.del(`${key}_${guuid}_expiration_at`)
     ]);
@@ -101,10 +119,42 @@ module.exports = (redis, options) => {
       return this.delByKeyGuuid(key, guuid);
     });
 
+  const executeEvents = (key, value, guuid) => (
+    expirationType,
+    expirationValue
+  ) => async list => {
+    let isInterval = expirationType === "CRON";
+    if (value && !Number.isNaN(value)) {
+      await Promise.map(list, cb =>
+        cb(value, key, () => {
+          isInterval = false;
+        })
+      );
+      if (isInterval) {
+        await this.set(key, value).cron(expirationValue);
+      }
+    }
+    await this.delByKeyGuuid(key, guuid);
+  };
+
+  const verifyKeyExpired = async (key, cb) => {
+    const list = await this.get(key);
+    const currentDate = new Date();
+    await Promise.map(list, async elements => {
+      if (parseInt(elements.expiration_at, 10) <= currentDate.getTime()) {
+        await executeEvents(key, elements.value, elements.guuid)(
+          elements.expiration_type,
+          elements.expiration_value
+        )([cb]);
+      }
+    });
+  };
+
   const listEvents = {};
   this.on = async (key, cb) => {
-    listEvents[key] = listEvents[key] ? listEvents[key] : [];
+    listEvents[key] = listEvents[key] || [];
     listEvents[key].push(cb);
+    await verifyKeyExpired(key, cb);
   };
 
   const redisSubscriber = Redis.createClient(options);
@@ -112,11 +162,18 @@ module.exports = (redis, options) => {
     const keys = expiredKey.split("_");
     const guuid = keys.pop();
     const key = keys.join("_");
-    const value = await redis.getAsync(`${key}_${guuid}_value`);
 
     if (listEvents[key]) {
-      listEvents[key].map(async cb => cb(value, key));
-      await this.delByKeyGuuid(key, guuid);
+      const value = await redis.getAsync(`${key}_${guuid}_value`);
+      const expirationType = await redis.getAsync(
+        `${key}_${guuid}_expiration_type`
+      );
+      const expirationValue = await redis.getAsync(
+        `${key}_${guuid}_expiration_value`
+      );
+      await executeEvents(key, value, guuid)(expirationType, expirationValue)(
+        listEvents[key]
+      );
     }
   });
   redisSubscriber.psubscribe("__keyevent@0__:expired");

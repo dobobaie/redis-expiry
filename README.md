@@ -7,6 +7,7 @@ Use redis to expire your keys and handling the value
 * CRUD your events
 * Save multiple values in a single key
 * Retrieve your value when the key expire
+* Add cron task
 
 ## Installation
 
@@ -72,8 +73,10 @@ await rexp.set("myKeyByCron", "myValue").cron("*/4 * * * * *");
 ```
 
 `myKeyByCron` will expire in the next multiple of 4 seconds.  
-More information: [https://www.npmjs.com/package/cron-parser](https://www.npmjs.com/package/cron-parser)
-⚠ after expiration the event is not reschedule ⚠  
+
+⚠ after expiration the event is rescheduled, bellow "Adding event handler" to stop it⚠   
+
+More information: [https://www.npmjs.com/package/cron-parser](https://www.npmjs.com/package/cron-parser)  
   
 ### Adding event handler
 
@@ -82,6 +85,13 @@ The handler will be call every time a specified key expires:
 ``` js  
 rexp.on("myKeyByTimeout", (value, key) => {
   // value === "myValue"
+});
+```
+ 
+To stop the cron task execute `stop` parameter:  
+``` js  
+rexp.on("myKeyByTimeout", (value, key, stop) => {
+  stop(); // stop cron task
 });
 ```
 

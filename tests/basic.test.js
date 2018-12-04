@@ -1,5 +1,8 @@
+const redisUrl = process.env.REDIS_URL;
+
 const Promise = require("bluebird");
 const test = require("ava");
+
 const Redis = require("redis");
 
 Promise.promisifyAll(Redis.RedisClient.prototype);
@@ -7,14 +10,8 @@ Promise.promisifyAll(Redis.Multi.prototype);
 
 const redisExpiry = require("../index");
 
-const redisUrl = process.env.REDIS_URL;
-
-let redis = null;
-let rexp = null;
-test.before("Run simulator", async () => {
-  redis = Redis.createClient(redisUrl);
-  rexp = redisExpiry(redis, redisUrl);
-});
+const redis = Redis.createClient(redisUrl);
+const rexp = redisExpiry(redis, redisUrl);
 
 test("Basic - Natif function", async t => {
   t.deepEqual(rexp.natif, redis, "Redis instances are different");
@@ -24,7 +21,7 @@ test("Basic - Set function", async t => {
   const result = await rexp.set("set_expiration", "now_call");
   t.deepEqual(
     Object.keys(result),
-    ["now", "at", "cron", "timeout"],
+    ["timeout", "now", "at", "cron"],
     "Invalid method returned"
   );
 });
@@ -99,7 +96,8 @@ test("Expiration - Cron function", async t => {
     100;
   await rexp.set("set_expiration_for_cron", valueForCron).cron("*/4 * * * * *");
   await new Promise((resolve, reject) => {
-    rexp.on("set_expiration_for_cron", value => {
+    rexp.on("set_expiration_for_cron", (value, guuid, stop) => {
+      stop();
       const newTime = new Date();
       t.is(value, valueForCron, "Expected value is not consistent");
       if (
@@ -120,6 +118,33 @@ test("Expiration - Cron function", async t => {
     [],
     `"set_expiration_for_cron" key hasn't been removed`
   );
+});
+
+const valueForCronRepeatMode = "cron_repeat_mode_call";
+test("Expiration - Cron function (repeate mode)", async t => {
+  let countRepeat = 0;
+  const currentTime = new Date();
+  const timeoutCron =
+    (4 -
+      ((currentTime.getSeconds() % 4) +
+        currentTime.getMilliseconds() * 0.001)) *
+      1000 -
+    100;
+  await rexp
+    .set("set_expiration_for_cron_repeat_mode", valueForCronRepeatMode)
+    .cron("*/4 * * * * *");
+  await new Promise((resolve, reject) => {
+    rexp.on("set_expiration_for_cron_repeat_mode", (value, guuid, stop) => {
+      countRepeat += 1;
+      if (countRepeat === 3) {
+        stop();
+        resolve();
+      }
+    });
+    setTimeout(reject, timeoutCron + 4000 * 2 + 999);
+  })
+    .then(() => t.pass())
+    .catch(() => t.fail(`"cron" function take too much time`));
 });
 
 const valueForAt = "at_call";
@@ -154,6 +179,35 @@ test("Expiration - At function", async t => {
   );
 });
 
+const valueForOn = "on_call";
+test("Other - on event after key has been expired", async t => {
+  const verifyKey = await rexp.get("set_expiration_for_on");
+  t.deepEqual(verifyKey, [], `"set_expiration_for_on" key already exists`);
+  const currentTime = new Date();
+  await rexp.set("set_expiration_for_on", valueForOn).now();
+  await new Promise((resolve, reject) => {
+    setTimeout(() => {
+      rexp.on("set_expiration_for_on", value => {
+        const newTime = new Date();
+        t.is(value, valueForOn, "Expected value is not consistent");
+        if (newTime.getTime() - currentTime.getTime() < 2999) {
+          return resolve();
+        }
+        return reject();
+      });
+      setTimeout(reject, 999);
+    }, 2000);
+  })
+    .then(() => t.pass())
+    .catch(err => t.fail(`"on" event take too much time${err}`));
+  const verifyKeyAgain = await rexp.get("set_expiration_for_on");
+  t.deepEqual(
+    verifyKeyAgain,
+    [],
+    `"set_expiration_for_on" key hasn't been removed`
+  );
+});
+
 const valueForGet = "get_call";
 test("Other - get/set/del functions", async t => {
   const verifyKey = await rexp.get("set_expiration_for_get");
@@ -169,7 +223,9 @@ test("Other - get/set/del functions", async t => {
   delete result.expiration_at;
   t.deepEqual(result, {
     value: valueForGet,
-    expiration: 100000
+    expiration: 100000,
+    expiration_type: "TIMEOUT",
+    expiration_value: "100000"
   });
   await rexp.del("set_expiration_for_get", valueForGet);
   const verifyKeyAgain = await rexp.get("set_expiration_for_get");
