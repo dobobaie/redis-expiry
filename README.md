@@ -31,7 +31,7 @@ const rexp = redisExpiry(redis, process.env.REDIS_URL);
 
 ### Schedule a new event
 
-Before choosing the expiration type of your key, you have to set the key/value:  
+Before choosing the type of expiration, you have to set the key/value:  
 
 ``` js  
 rexp.set("myKey", "myValue")...
@@ -74,7 +74,7 @@ await rexp.set("myKeyByCron", "myValue").cron("*/4 * * * * *");
 
 `myKeyByCron` will expire in the next multiple of 4 seconds.  
 
-⚠ after expiration the event is rescheduled, bellow "Adding event handler" to stop it⚠   
+⚠ after expiration the event is rescheduled, bellow "Adding event handler" to stop it ⚠   
 
 More information: [https://www.npmjs.com/package/cron-parser](https://www.npmjs.com/package/cron-parser)  
   
@@ -103,10 +103,16 @@ If no value is specified then every keys will be removed:
 await rexp.del("myKeyByTimeout");
 ```
 
-Remove a specific key by value: 
+Remove specific contents by value: 
 
 ``` js  
 await rexp.del("myKeyByTimeout", "myValue");
+```
+
+By guuid:  
+
+``` js  
+await rexp.delByGuuid("Dzokijo");
 ```
 
 ### Retrieve scheduled key
@@ -117,10 +123,36 @@ If no value is specified then every keys will be returned:
 const result = await rexp.get("myKeyByTimeout");
 ```
 
-Return a specific key by value:  
+Return specific contents by value:  
 
 ``` js  
 const result = await rexp.get("myKeyByTimeout", "myValue");
+```
+
+By guuid:  
+
+``` js  
+await rexp.getByGuuid("Dzokijo");
+```
+
+### Edit scheduled key
+
+If no value is specified then every keys will be updated:
+
+``` js  
+const result = await rexp.update("myKeyByTimeout")("myNewKey");
+```
+
+Update specific contents by value:  
+
+``` js  
+const result = await rexp.update("myKeyByTimeout", "myValue")("myNewKey");
+```
+
+By guuid:  
+
+``` js  
+await rexp.updateByGuuid("Dzokijo")("myNewKey");
 ```
 
 ## Testing
@@ -141,10 +173,10 @@ const redis = Redis.createClient(process.env.REDIS_URL);
 const redisExpiry = require("redis-expiry");
 const rexp = redisExpiry(redis, process.env.REDIS_URL);
 
-rexp.set("myKeyByTimeout", "myValue").timeout(60000) // key will be expire in 1 min
+rexp.set("myKeyByTimeout", "myValue").timeout(60000) // key will be expire in 60sec
   .catch(err => console.error(err));
 
-rexp.on("myKeyByTimeout", (value, key) => { // the event will always be scheduled if the application restart
+rexp.on("myKeyByTimeout", (value, key) => { // event will always be scheduled if the application restart
   console.log("Value returned", value, "From key", key);
 });
 

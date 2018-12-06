@@ -209,31 +209,71 @@ test("Other - on event after key has been expired", async t => {
 });
 
 const valueForGet = "get_call";
-test("Other - get/set/del functions", async t => {
+test("Other - get/set/del/update functions", async t => {
   const verifyKey = await rexp.get("set_expiration_for_get");
   t.deepEqual(verifyKey, [], `"set_expiration_for_get" key already exists`);
-  await rexp.set("set_expiration_for_get", valueForGet).timeout(100000);
+  // ---
+  const rSet = await rexp
+    .set("set_expiration_for_get", valueForGet)
+    .timeout(100000);
   const result = (await rexp.get(
     "set_expiration_for_get",
     valueForGet
   )).shift();
-  t.not(result, undefined, "Get undefined value");
+  t.deepEqual(result, rSet, "`get` result is different than `set` return");
   delete result.guuid;
   delete result.created_at;
   delete result.expiration_at;
-  t.deepEqual(result, {
-    value: valueForGet,
-    expiration: 100000,
-    expiration_type: "TIMEOUT",
-    expiration_value: "100000"
-  });
-  await rexp.del("set_expiration_for_get", valueForGet);
+  t.deepEqual(
+    result,
+    {
+      value: valueForGet,
+      expiration: 100000,
+      expiration_type: "TIMEOUT",
+      expiration_value: "100000"
+    },
+    "`get` result have some different fields than the original"
+  );
+  // ---
+  rSet.value = "get_new_call";
+  await rexp.update("set_expiration_for_get", valueForGet)(rSet.value);
+  const resultBadValue = await rexp.get("set_expiration_for_get", valueForGet);
+  t.deepEqual(resultBadValue, [], "old value was wrongly deleted");
+  const resultSuccessValue = (await rexp.get(
+    "set_expiration_for_get",
+    rSet.value
+  )).shift();
+  t.deepEqual(
+    resultSuccessValue,
+    rSet,
+    "`get` result is different than the data updated"
+  );
+  // ---
+  await rexp.del("set_expiration_for_get", rSet.value);
   const verifyKeyAgain = await rexp.get("set_expiration_for_get");
   t.deepEqual(
     verifyKeyAgain,
     [],
     `"set_expiration_for_get" key already exists`
   );
+});
+
+const valueForGetByGuuid = "get_by_guuid_call";
+test("Other - getByGuuid/delByGuuid/delByGuuid functions", async t => {
+  const rSet = await rexp
+    .set("set_expiration_for_guuid", valueForGetByGuuid)
+    .now();
+  const result = await rexp.getByGuuid(rSet.guuid);
+  t.deepEqual(rSet, result, "getByGuuid doesn't works");
+  // ---
+  rSet.value = "get_by_guuid_new_call";
+  await rexp.updateByGuuid(rSet.guuid)(rSet.value);
+  const resultUpdate = await rexp.getByGuuid(rSet.guuid);
+  t.deepEqual(rSet, resultUpdate, "updateByGuuid doesn't works");
+  // ---
+  await rexp.delByGuuid(rSet.guuid);
+  const resultDelete = await rexp.getByGuuid(rSet.guuid);
+  t.is(undefined, resultDelete, "delByGuuid doesn't works");
 });
 
 test("Other - no keys in redis", async t => {
@@ -243,3 +283,15 @@ test("Other - no keys in redis", async t => {
     .execAsync()).shift();
   t.deepEqual(verifyKey, [], `there are still traces of the test`);
 });
+
+test.serial("Removing traces", async t =>
+  (() => t.pass())(
+    await Promise.map(
+      await (await redis
+        .multi()
+        .keys(`set_expiration_for_*`)
+        .execAsync()).shift(),
+      element => redis.del(element)
+    )
+  )
+);
