@@ -217,6 +217,7 @@ module.exports = (redis, options) => {
   };
 
   const redisSubscriber = Redis.createClient(options);
+  redisSubscriber.config("set", "notify-keyspace-events", "Ex");
   redisSubscriber.on("pmessage", async (pattern, channel, expiredKey) => {
     const keys = expiredKey.split("_");
     const guuid = keys.pop();
