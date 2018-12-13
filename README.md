@@ -1,5 +1,7 @@
+[![Build Status](https://travis-ci.com/dobobaie/redis-expiry.svg?branch=master)](https://travis-ci.com/dobobaie/redis-expiry)
+
 # redis-expiry
-Use redis to expire your keys and handling the value
+Use redis to expire your keys and handling the value  
 
 ## Features
 * Schedule the expiration of your keys
