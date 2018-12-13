@@ -165,6 +165,42 @@ By guuid:
 await rexp.updateByGuuid("Dzokijo")("myNewKey");
 ```
 
+### Reschedule an existing key  
+
+Reschedule date:  
+``` js  
+const currentDate = new Date();
+currentDate.setSeconds(currentDate.getSeconds() + 30);
+await rexp.reschedule("myKeyByAt", "myValue").at(currentDate);
+```
+  
+Reschedule timeout:  
+``` js  
+await rexp.reschedule("myKeyByTimeout", "myValue").timeout(60000);
+```
+  
+Reschedule now:  
+``` js  
+await rexp.reschedule("myKeyByNow", "myValue").now();
+```
+  
+Reschedule cron:  
+``` js  
+await rexp.reschedule("myKeyByCron", "myValue").cron("*/4 * * * * *");
+```
+  
+Reschedule all contents :  
+  
+``` js  
+await rexp.reschedule("myKeyByTimeout")[...];
+```
+  
+By guuid:  
+
+``` js  
+await rexp.rescheduleByGuuid("Dzokijo")[...];
+```
+  
 ## Testing
 
 Clone the repo and run from the project root:

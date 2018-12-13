@@ -228,6 +228,45 @@ test("Expiration - At function", async t => {
   );
 });
 
+const valueForReschedule = "reschedule_call";
+test("Reschedule - Verify functions", async t => {
+  const result = await rexp.set("set_reschedule", valueForReschedule);
+  t.deepEqual(
+    Object.keys(await rexp.rescheduleByGuuid(result.guuid)),
+    ["timeout", "now", "at", "cron"],
+    "Invalid method returned"
+  );
+});
+
+const valueForRescheduleTimeout = "reschedule_timeout_call";
+test("Reschedule - Verify timeout function", async t => {
+  const currentTime = new Date();
+  const result = await rexp
+    .set("set_reschedule_for_timeout", valueForRescheduleTimeout)
+    .timeout(60000);
+  await rexp.rescheduleByGuuid(result.guuid).timeout(1000);
+  await new Promise((resolve, reject) => {
+    rexp.on("set_reschedule_for_timeout", value => {
+      const newTime = new Date();
+      t.is(
+        value,
+        valueForRescheduleTimeout,
+        "Expected value is not consistent"
+      );
+      if (
+        newTime.getTime() - currentTime.getTime() >= 1000 &&
+        newTime.getTime() - currentTime.getTime() < 1999
+      ) {
+        return resolve();
+      }
+      return reject();
+    });
+    setTimeout(reject, 1999);
+  })
+    .then(() => t.pass())
+    .catch(() => t.fail(`"timeout" function take too much time`));
+});
+
 const valueForOn = "on_call";
 test("Other - on event after key has been expired", async t => {
   const verifyKey = await rexp.get("set_expiration_for_on");
