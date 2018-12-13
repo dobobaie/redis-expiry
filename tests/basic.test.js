@@ -10,11 +10,12 @@ Promise.promisifyAll(Redis.Multi.prototype);
 
 const redisExpiry = require("../index");
 
-const redis = Redis.createClient(redisUrl);
-const rexp = redisExpiry(redis, redisUrl);
+const redisSetter = Redis.createClient(redisUrl);
+const redisGetter = Redis.createClient(redisUrl);
+const rexp = redisExpiry(redisSetter, redisGetter);
 
 test("Basic - Natif function", async t => {
-  t.deepEqual(rexp.natif, redis, "Redis instances are different");
+  t.deepEqual(rexp.natif, redisSetter, "Redis instances are different");
 });
 
 test("Basic - Set function", async t => {
@@ -277,7 +278,7 @@ test("Other - getByGuuid/delByGuuid/delByGuuid functions", async t => {
 });
 
 test("Other - no keys in redis", async t => {
-  const verifyKey = (await redis
+  const verifyKey = (await redisSetter
     .multi()
     .keys(`set_expiration_for_*`)
     .execAsync()).shift();
@@ -287,11 +288,11 @@ test("Other - no keys in redis", async t => {
 test.serial("Removing traces", async t =>
   (() => t.pass())(
     await Promise.map(
-      await (await redis
+      await (await redisSetter
         .multi()
         .keys(`set_expiration_for_*`)
         .execAsync()).shift(),
-      element => redis.del(element)
+      element => redisSetter.del(element)
     )
   )
 );
