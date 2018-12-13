@@ -131,7 +131,7 @@ test("Expiration - Cron function (repeate mode)", async t => {
         currentTime.getMilliseconds() * 0.001)) *
       1000 -
     100;
-  await rexp
+  const result = await rexp
     .set("set_expiration_for_cron_repeat_mode", valueForCronRepeatMode)
     .cron("*/4 * * * * *");
   await new Promise((resolve, reject) => {
@@ -146,6 +146,54 @@ test("Expiration - Cron function (repeate mode)", async t => {
   })
     .then(() => t.pass())
     .catch(() => t.fail(`"cron" function take too much time`));
+  t.is(
+    result.expiration_extra,
+    undefined,
+    "`expiration_extra` field is different than the original"
+  );
+});
+
+const valueForCronOptionsMode = "cron_options_mode_call";
+test("Expiration - Cron function (options mode)", async t => {
+  const currentTime = new Date();
+  const currentDateCron = new Date();
+  currentDateCron.setSeconds(currentDateCron.getSeconds() + 6);
+  const timeoutCron =
+    (4 -
+      ((currentTime.getSeconds() % 4) +
+        currentTime.getMilliseconds() * 0.001)) *
+      1000 -
+    100 +
+    4000;
+  const result = await rexp
+    .set("set_expiration_for_cron_options_mode", valueForCronOptionsMode)
+    .cron("*/4 * * * * *", {
+      currentDate: currentDateCron
+    });
+  await new Promise((resolve, reject) => {
+    rexp.on("set_expiration_for_cron_options_mode", (value, guuid, stop) => {
+      stop();
+      const newTime = new Date();
+      t.is(value, valueForCronOptionsMode, "Expected value is not consistent");
+      if (
+        newTime.getTime() - currentTime.getTime() >= timeoutCron &&
+        newTime.getTime() - currentTime.getTime() < timeoutCron + 999
+      ) {
+        return resolve();
+      }
+      return reject();
+    });
+    setTimeout(reject, timeoutCron + 999);
+  })
+    .then(() => t.pass())
+    .catch(() => t.fail(`"cron" function take too much time`));
+  t.deepEqual(
+    result.expiration_extra,
+    {
+      currentDate: currentDateCron
+    },
+    "`expiration_extra` field is different than the original"
+  );
 });
 
 const valueForAt = "at_call";
@@ -231,7 +279,8 @@ test("Other - get/set/del/update functions", async t => {
       value: valueForGet,
       expiration_type: "TIMEOUT",
       expiration_value: 100000,
-      expiration_expression: 100000
+      expiration_expression: 100000,
+      expiration_extra: undefined
     },
     "`get` result have some different fields than the original"
   );
