@@ -229,9 +229,9 @@ test("Other - get/set/del/update functions", async t => {
     result,
     {
       value: valueForGet,
-      expiration: 100000,
       expiration_type: "TIMEOUT",
-      expiration_value: "100000"
+      expiration_value: 100000,
+      expiration_expression: 100000
     },
     "`get` result have some different fields than the original"
   );
