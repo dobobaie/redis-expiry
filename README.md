@@ -6,7 +6,7 @@ Use redis to expire your keys and handling the value
 ## Features
 * Schedule the expiration of your keys
 * Handling your keys and values
-* CRUD your events
+* CRUD your scheduler + rescheduling
 * Save multiple values in a single key
 * Retrieve your value when the key expire
 * Add cron task
@@ -39,7 +39,7 @@ The code bellow is deprecated since v1.0.4
 const rexp = redisExpiry(redisSetter, process.env.REDIS_URL);
 ```
 
-### Schedule a new event
+### Schedule a new scheduler
 
 Before choosing the type of expiration, you have to set the key/value:  
 
@@ -105,7 +105,7 @@ rexp.on("myKeyByTimeout", (value, key, stop) => {
 });
 ```
 
-### Cancel scheduled key
+### Cancel scheduler
 
 If no value is specified then every keys will be removed:
 
@@ -125,7 +125,7 @@ By guuid:
 await rexp.delByGuuid("Dzokijo");
 ```
 
-### Retrieve scheduled key
+### Retrieve scheduler
 
 If no value is specified then every keys will be returned:
 
@@ -145,7 +145,7 @@ By guuid:
 await rexp.getByGuuid("Dzokijo");
 ```
 
-### Edit scheduled key
+### Edit scheduled value
 
 If no value is specified then every keys will be updated:
 
@@ -165,7 +165,7 @@ By guuid:
 await rexp.updateByGuuid("Dzokijo")("myNewKey");
 ```
 
-### Reschedule an existing key  
+### Reschedule a scheduler
 
 Reschedule date:  
 ``` js  
