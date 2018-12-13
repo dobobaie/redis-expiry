@@ -25,10 +25,18 @@ Create a new instance :
 
 ``` js  
 const Redis = require("redis");
-const redis = Redis.createClient(process.env.REDIS_URL);
-
 const redisExpiry = require("redis-expiry");
-const rexp = redisExpiry(redis, process.env.REDIS_URL);
+
+const redisSetter = Redis.createClient(process.env.REDIS_URL);
+const redisGetter = Redis.createClient(process.env.REDIS_URL);
+
+const rexp = redisExpiry(redisSetter, redisGetter);
+```
+
+The code bellow is deprecated since v1.0.4  
+
+```
+const rexp = redisExpiry(redisSetter, process.env.REDIS_URL);
 ```
 
 ### Schedule a new event
@@ -170,10 +178,12 @@ $ npm test
 
 ``` js  
 const Redis = require("redis");
-const redis = Redis.createClient(process.env.REDIS_URL);
-
 const redisExpiry = require("redis-expiry");
-const rexp = redisExpiry(redis, process.env.REDIS_URL);
+
+const redisSetter = Redis.createClient(process.env.REDIS_URL);
+const redisGetter = Redis.createClient(process.env.REDIS_URL);
+
+const rexp = redisExpiry(redisSetter, redisGetter);
 
 rexp.set("myKeyByTimeout", "myValue").timeout(60000) // key will be expire in 60sec
   .catch(err => console.error(err));
