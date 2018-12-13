@@ -213,6 +213,41 @@ module.exports = (redisSetter, redisGetter) => {
       return this.updateByKeyGuuid(key, guuid)(toUpdate);
     });
 
+  const getAvailableScheduler = callback =>
+    Object.keys(this.set()).reduce(
+      (accumulator, currentValue) =>
+        Object.assign(accumulator, {
+          [currentValue]: (expression, options) =>
+            callback(currentValue, expression, options)
+        }),
+      {}
+    );
+
+  this.rescheduleByKeyGuuid = (key, guuid) =>
+    getAvailableScheduler(async (type, expression, options) => {
+      const value = await redisSetter.getAsync(`${key}_${guuid}_value`);
+      await this.delByKeyGuuid(key, guuid);
+      return this.set(key, value)[type](expression, options);
+    });
+
+  this.rescheduleByGuuid = guuid =>
+    getAvailableScheduler(async (type, expression, options) =>
+      Promise.map(await getAllKeysByGuuid(guuid), async key => {
+        const redisValue = await redisSetter.getAsync(`${key}_${guuid}_value`);
+        if (!redisValue) return null;
+        return this.rescheduleByKeyGuuid(key, guuid)[type](expression, options);
+      })
+    );
+
+  this.reschedule = (key, value) =>
+    getAvailableScheduler(async (type, expression, options) =>
+      Promise.map(await getAllGuuidByKey(key), async guuid => {
+        const redisValue = await redisSetter.getAsync(`${key}_${guuid}_value`);
+        if (!redisValue || (value && value !== redisValue)) return null;
+        return this.rescheduleByKeyGuuid(key, guuid)[type](expression, options);
+      })
+    );
+
   const executeEvents = (key, value, guuid) => (
     expirationType,
     expirationExpression,
