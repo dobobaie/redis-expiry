@@ -230,9 +230,18 @@ test("Expiration - At function", async t => {
 
 const valueForReschedule = "reschedule_call";
 test("Reschedule - Verify functions", async t => {
-  const result = await rexp.set("set_reschedule", valueForReschedule);
+  const result = await rexp
+    .set("set_reschedule", valueForReschedule)
+    .timeout(5000);
   t.deepEqual(
     Object.keys(await rexp.rescheduleByGuuid(result.guuid)),
+    ["andUpdateValue", "timeout", "now", "at", "cron"],
+    `Invalid method returned with "andUpdateValue" function`
+  );
+  t.deepEqual(
+    Object.keys(
+      await rexp.rescheduleByGuuid(result.guuid).andUpdateValue("newValue")
+    ),
     ["timeout", "now", "at", "cron"],
     "Invalid method returned"
   );
@@ -265,6 +274,30 @@ test("Reschedule - Verify timeout function", async t => {
   })
     .then(() => t.pass())
     .catch(() => t.fail(`"timeout" function take too much time`));
+});
+
+const valueForRescheduleAndUpdateValue = "reschedule_and_update_value_call";
+test("Reschedule - Verify chainable API", async t => {
+  const result = await rexp
+    .set("set_reschedule_and_update_value", valueForRescheduleAndUpdateValue)
+    .timeout(4000);
+  await rexp
+    .rescheduleByGuuid(result.guuid)
+    .andUpdateValue("newValue")
+    .timeout(1000);
+  await new Promise((resolve, reject) => {
+    rexp.on("set_reschedule_and_update_value", value =>
+      value === "newValue"
+        ? resolve()
+        : reject(new Error(`"andUpdateValue" doesn't works`))
+    );
+    setTimeout(
+      () => reject(new Error(`"timeout" function take too much time`)),
+      1999
+    );
+  })
+    .then(() => t.pass())
+    .catch(err => t.fail(err));
 });
 
 const valueForOn = "on_call";
