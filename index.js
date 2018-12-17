@@ -83,39 +83,53 @@ module.exports = (redisSetter, redisGetter) => {
     }
   });
 
-  const getAllGuuidByKey = async key =>
+  const getAllGuuidByKey = async (key, value) =>
     Object.values(
-      await (await redisSetter
-        .multi()
-        .keys(`${key}_*`)
-        .execAsync())
-        .shift()
-        .reduce((accumulator, currentValue) => {
+      await Promise.reduce(
+        (await redisSetter
+          .multi()
+          .keys(`${key}_*`)
+          .execAsync()).shift(),
+        async (accumulator, currentValue) => {
           const cObject = accumulator;
           const guuid = currentValue.substring(key.length + 1).split("_")[0];
-          if (!guuid) return accumulator;
+          if (!guuid || cObject[guuid]) return accumulator;
+          const redisValue = await redisSetter.getAsync(
+            `${key}_${guuid}_value`
+          );
+          if (!redisValue || (value && value !== redisValue)) {
+            return accumulator;
+          }
           cObject[guuid] = guuid;
           return cObject;
-        }, {})
+        },
+        {}
+      )
     );
 
   const getAllKeysByGuuid = async guuid =>
     Object.values(
-      await (await redisSetter
-        .multi()
-        .keys(`*_${guuid}_*`)
-        .execAsync())
-        .shift()
-        .reduce(async (accumulator, currentValue) => {
+      await Promise.reduce(
+        (await redisSetter
+          .multi()
+          .keys(`*_${guuid}_*`)
+          .execAsync()).shift(),
+        async (accumulator, currentValue) => {
           const cObject = accumulator;
           const key = currentValue.substring(
             0,
             currentValue.indexOf(guuid) - 1
           );
-          if (!key) return accumulator;
+          if (!key || cObject[key]) return accumulator;
+          const redisValue = await redisSetter.getAsync(
+            `${key}_${guuid}_value`
+          );
+          if (!redisValue) return accumulator;
           cObject[key] = key;
           return cObject;
-        }, {})
+        },
+        {}
+      )
     );
 
   this.getByKeyGuuid = async (key, guuid) => {
@@ -156,18 +170,14 @@ module.exports = (redisSetter, redisGetter) => {
   };
 
   this.getByGuuid = async guuid =>
-    (await Promise.map(await getAllKeysByGuuid(guuid), async key => {
-      const redisValue = await redisSetter.getAsync(`${key}_${guuid}_value`);
-      if (!redisValue) return null;
-      return this.getByKeyGuuid(key, guuid);
-    })).shift();
+    (await Promise.map(await getAllKeysByGuuid(guuid), async key =>
+      this.getByKeyGuuid(key, guuid)
+    )).shift();
 
   this.get = async (key, value) =>
-    (await Promise.map(await getAllGuuidByKey(key), async guuid => {
-      const redisValue = await redisSetter.getAsync(`${key}_${guuid}_value`);
-      if (!redisValue || (value && value !== redisValue)) return null;
-      return this.getByKeyGuuid(key, guuid);
-    })).filter(elem => elem !== null);
+    (await Promise.map(await getAllGuuidByKey(key, value), async guuid =>
+      this.getByKeyGuuid(key, guuid)
+    )).filter(elem => elem !== null);
 
   this.delByKeyGuuid = (key, guuid) =>
     Promise.all([
@@ -183,38 +193,30 @@ module.exports = (redisSetter, redisGetter) => {
     ]);
 
   this.delByGuuid = async guuid =>
-    Promise.map(await getAllKeysByGuuid(guuid), async key => {
-      const redisValue = await redisSetter.getAsync(`${key}_${guuid}_value`);
-      if (!redisValue) return null;
-      return this.delByKeyGuuid(key, guuid);
-    });
+    Promise.map(await getAllKeysByGuuid(guuid), async key =>
+      this.delByKeyGuuid(key, guuid)
+    );
 
   this.del = async (key, value) =>
-    Promise.map(await getAllGuuidByKey(key), async guuid => {
-      const redisValue = await redisSetter.getAsync(`${key}_${guuid}_value`);
-      if (!redisValue || (value && value !== redisValue)) return null;
-      return this.delByKeyGuuid(key, guuid);
-    });
+    Promise.map(await getAllGuuidByKey(key, value), async guuid =>
+      this.delByKeyGuuid(key, guuid)
+    );
 
   this.updateByKeyGuuid = (key, guuid) => toUpdate =>
     redisSetter.set(`${key}_${guuid}_value`, toUpdate);
 
   this.updateByGuuid = guuid => async toUpdate =>
-    Promise.map(await getAllKeysByGuuid(guuid), async key => {
-      const redisValue = await redisSetter.getAsync(`${key}_${guuid}_value`);
-      if (!redisValue) return null;
-      return this.updateByKeyGuuid(key, guuid)(toUpdate);
-    });
+    Promise.map(await getAllKeysByGuuid(guuid), async key =>
+      this.updateByKeyGuuid(key, guuid)(toUpdate)
+    );
 
   this.update = (key, value) => async toUpdate =>
-    Promise.map(await getAllGuuidByKey(key), async guuid => {
-      const redisValue = await redisSetter.getAsync(`${key}_${guuid}_value`);
-      if (!redisValue || (value && value !== redisValue)) return null;
-      return this.updateByKeyGuuid(key, guuid)(toUpdate);
-    });
+    Promise.map(await getAllGuuidByKey(key, value), async guuid =>
+      this.updateByKeyGuuid(key, guuid)(toUpdate)
+    );
 
-  const getAvailableScheduler = callback =>
-    Object.keys(this.set()).reduce(
+  const getAvailableScheduler = (callback, moreFunctions) =>
+    Object.keys(Object.assign(moreFunctions || {}, this.set())).reduce(
       (accumulator, currentValue) =>
         Object.assign(accumulator, {
           [currentValue]: (expression, options) =>
@@ -223,29 +225,60 @@ module.exports = (redisSetter, redisGetter) => {
       {}
     );
 
-  this.rescheduleByKeyGuuid = (key, guuid) =>
+  const andUpdateValue = (asyncKeys, asyncGuuids) => toUpdate =>
     getAvailableScheduler(async (type, expression, options) => {
-      const value = await redisSetter.getAsync(`${key}_${guuid}_value`);
-      await this.delByKeyGuuid(key, guuid);
-      return this.set(key, value)[type](expression, options);
+      const keys = await asyncKeys;
+      const guuids = await asyncGuuids;
+      return (elements => (Array.isArray(keys) ? elements : elements.shift()))(
+        await Promise.map(Array.isArray(keys) ? keys : [keys], async key =>
+          (elements => (Array.isArray(guuids) ? elements : elements.shift()))(
+            await Promise.map(
+              Array.isArray(guuids) ? guuids : [guuids],
+              async guuid => {
+                await this.delByKeyGuuid(key, guuid);
+                return this.set(key, toUpdate)[type](expression, options);
+              }
+            )
+          )
+        )
+      );
     });
 
+  this.rescheduleByKeyGuuid = (key, guuid) =>
+    getAvailableScheduler(
+      (type, expression, options) =>
+        type === "andUpdateValue"
+          ? andUpdateValue(key, guuid)(expression)
+          : (async () => {
+              const value = await redisSetter.getAsync(`${key}_${guuid}_value`);
+              await this.delByKeyGuuid(key, guuid);
+              return this.set(key, value)[type](expression, options);
+            })(),
+      { andUpdateValue }
+    );
+
   this.rescheduleByGuuid = guuid =>
-    getAvailableScheduler(async (type, expression, options) =>
-      Promise.map(await getAllKeysByGuuid(guuid), async key => {
-        const redisValue = await redisSetter.getAsync(`${key}_${guuid}_value`);
-        if (!redisValue) return null;
-        return this.rescheduleByKeyGuuid(key, guuid)[type](expression, options);
-      })
+    getAvailableScheduler(
+      (type, expression, options) =>
+        type === "andUpdateValue"
+          ? andUpdateValue(getAllKeysByGuuid(guuid), guuid)(expression)
+          : (async () =>
+              Promise.map(await getAllKeysByGuuid(guuid), async key =>
+                this.rescheduleByKeyGuuid(key, guuid)[type](expression, options)
+              ))(),
+      { andUpdateValue }
     );
 
   this.reschedule = (key, value) =>
-    getAvailableScheduler(async (type, expression, options) =>
-      Promise.map(await getAllGuuidByKey(key), async guuid => {
-        const redisValue = await redisSetter.getAsync(`${key}_${guuid}_value`);
-        if (!redisValue || (value && value !== redisValue)) return null;
-        return this.rescheduleByKeyGuuid(key, guuid)[type](expression, options);
-      })
+    getAvailableScheduler(
+      (type, expression, options) =>
+        type === "andUpdateValue"
+          ? andUpdateValue(key, getAllGuuidByKey(key, value))(expression)
+          : (async () =>
+              Promise.map(await getAllGuuidByKey(key, value), async guuid =>
+                this.rescheduleByKeyGuuid(key, guuid)[type](expression, options)
+              ))(),
+      { andUpdateValue }
     );
 
   const executeEvents = (key, value, guuid) => (

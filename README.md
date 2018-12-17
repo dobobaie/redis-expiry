@@ -79,12 +79,14 @@ await rexp.set("myKeyByNow", "myValue").now();
 **rexp.set(...).cron();**  
 Schedule from cron:  
 ``` js  
-await rexp.set("myKeyByCron", "myValue").cron("*/4 * * * * *");
+await rexp.set("myKeyByCron", "myValue").cron("*/4 * * * * *", cronOption);
 ```
 
 `myKeyByCron` will expire in the next multiple of 4 seconds.  
 
-⚠ after expiration the event is rescheduled, bellow "Adding event handler" to stop it ⚠   
+⚠ after expiration the event is rescheduled. To stop the cron, check "Adding event handler" part bellow⚠   
+
+`cronOption` is optional, check the link bellow to know more.  
 
 More information: [https://www.npmjs.com/package/cron-parser](https://www.npmjs.com/package/cron-parser)  
   
@@ -150,19 +152,19 @@ await rexp.getByGuuid("Dzokijo");
 If no value is specified then every keys will be updated:
 
 ``` js  
-const result = await rexp.update("myKeyByTimeout")("myNewKey");
+const result = await rexp.update("myKeyByTimeout")("myNewValue");
 ```
 
 Update specific contents by value:  
 
 ``` js  
-const result = await rexp.update("myKeyByTimeout", "myValue")("myNewKey");
+const result = await rexp.update("myKeyByTimeout", "myValue")("myNewValue");
 ```
 
 By guuid:  
 
 ``` js  
-await rexp.updateByGuuid("Dzokijo")("myNewKey");
+await rexp.updateByGuuid("Dzokijo")("myNewValue");
 ```
 
 ### Reschedule a scheduler
@@ -192,15 +194,23 @@ await rexp.reschedule("myKeyByCron", "myValue").cron("*/4 * * * * *");
 Reschedule all contents :  
   
 ``` js  
-await rexp.reschedule("myKeyByTimeout")[...];
+await rexp.reschedule("myKeyByTimeout").timeout(30000);
 ```
+
+Every contents is rescheduled with a timeout at 30 secs  
   
 By guuid:  
 
 ``` js  
-await rexp.rescheduleByGuuid("Dzokijo")[...];
+await rexp.rescheduleByGuuid("Dzokijo").timeout(30000);
 ```
   
+**Chainable API**  
+Update value with `andUpdateValue` function :  
+``` js  
+await rexp.rescheduleByGuuid("Dzokijo").andUpdateValue("myNewValue").timeout(30000);
+```
+
 ## Testing
 
 Clone the repo and run from the project root:
