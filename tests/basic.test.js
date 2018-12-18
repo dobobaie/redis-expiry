@@ -15,7 +15,26 @@ const redisGetter = Redis.createClient(redisUrl);
 const rexp = redisExpiry(redisSetter, redisGetter);
 
 test("Basic - Natif function", async t => {
-  t.deepEqual(rexp.natif, redisSetter, "Redis instances are different");
+  t.deepEqual(
+    rexp.redisSetter,
+    redisSetter,
+    "Redis setter instances are different"
+  );
+  t.deepEqual(
+    rexp.redisGetter,
+    redisGetter,
+    "Redis getter instances are different"
+  );
+
+  (() => t.pass())(
+    await Promise.map(
+      await (await redisSetter
+        .multi()
+        .keys(`set_*`)
+        .execAsync()).shift(),
+      element => redisSetter.del(element)
+    )
+  );
 });
 
 test("Basic - Set function", async t => {
@@ -231,7 +250,7 @@ test("Expiration - At function", async t => {
 const valueForReschedule = "reschedule_call";
 test("Reschedule - Verify functions", async t => {
   const result = await rexp
-    .set("set_reschedule", valueForReschedule)
+    .set("set_expiration_for_reschedule", valueForReschedule)
     .timeout(5000);
   t.deepEqual(
     Object.keys(await rexp.rescheduleByGuuid(result.guuid)),
@@ -245,17 +264,18 @@ test("Reschedule - Verify functions", async t => {
     ["timeout", "now", "at", "cron"],
     "Invalid method returned"
   );
+  await rexp.del("set_expiration_for_reschedule", valueForReschedule);
 });
 
 const valueForRescheduleTimeout = "reschedule_timeout_call";
 test("Reschedule - Verify timeout function", async t => {
   const currentTime = new Date();
   const result = await rexp
-    .set("set_reschedule_for_timeout", valueForRescheduleTimeout)
+    .set("set_expiration_for_reschedule_for_timeout", valueForRescheduleTimeout)
     .timeout(60000);
   await rexp.rescheduleByGuuid(result.guuid).timeout(1000);
   await new Promise((resolve, reject) => {
-    rexp.on("set_reschedule_for_timeout", value => {
+    rexp.on("set_expiration_for_reschedule_for_timeout", value => {
       const newTime = new Date();
       t.is(
         value,
@@ -273,23 +293,26 @@ test("Reschedule - Verify timeout function", async t => {
     setTimeout(reject, 1999);
   })
     .then(() => t.pass())
-    .catch(() => t.fail(`"timeout" function take too much time`));
+    .catch(e => t.fail(`"timeout" function take too much time ${e}`));
 });
 
 const valueForRescheduleAndUpdateValue = "reschedule_and_update_value_call";
 test("Reschedule - Verify chainable API", async t => {
   const result = await rexp
-    .set("set_reschedule_and_update_value", valueForRescheduleAndUpdateValue)
-    .timeout(4000);
+    .set(
+      "set_expiration_for_reschedule_and_update_value",
+      valueForRescheduleAndUpdateValue
+    )
+    .timeout(10000);
   await rexp
     .rescheduleByGuuid(result.guuid)
     .andUpdateValue("newValue")
     .timeout(1000);
   await new Promise((resolve, reject) => {
-    rexp.on("set_reschedule_and_update_value", value =>
+    rexp.on("set_expiration_for_reschedule_and_update_value", value =>
       value === "newValue"
         ? resolve()
-        : reject(new Error(`"andUpdateValue" doesn't works`))
+        : reject(new Error(`"andUpdateValue" doesn't works => ${value}`))
     );
     setTimeout(
       () => reject(new Error(`"timeout" function take too much time`)),
@@ -298,6 +321,63 @@ test("Reschedule - Verify chainable API", async t => {
   })
     .then(() => t.pass())
     .catch(err => t.fail(err));
+});
+
+const valueForRegexpSubscriber = "value_for_regexp_subscriber";
+test("Regexp - Verify subscriber", async t => {
+  await rexp
+    .set("set_expiration_for_regexp_subscriber", valueForRegexpSubscriber)
+    .timeout(1000);
+  await rexp
+    .set("set_expiration_for_regexp_subscriber3", valueForRegexpSubscriber)
+    .timeout(1000);
+  await rexp
+    .set("set_expiration_for_expreg_subscriber", valueForRegexpSubscriber)
+    .timeout(1000);
+  const keyRetrieved = [];
+  await new Promise(resolve => {
+    rexp.on(/set_expiration_for_regexp_(.*)/, (value, key) =>
+      keyRetrieved.push(key)
+    );
+    setTimeout(resolve, 1999);
+  });
+  t.deepEqual(
+    [
+      "set_expiration_for_regexp_subscriber",
+      "set_expiration_for_regexp_subscriber3"
+    ],
+    keyRetrieved.sort(),
+    "Regexp subscriber failed"
+  );
+  await rexp.del(
+    "set_expiration_for_expreg_subscriber",
+    valueForRegexpSubscriber
+  );
+});
+
+const valueForGetByRegexp = "get_by_guuid_call";
+test("Regexp - get/del/update functions", async t => {
+  const rSet = await rexp
+    .set("set_expiration_for_regexp_func", valueForGetByRegexp)
+    .now();
+  const rSet2 = await rexp
+    .set("set_expiration_for_2_regexp_func", valueForGetByRegexp)
+    .now();
+  const result = (await rexp.get(/(.*)_regexp_func/)).sort((a, b) =>
+    a.key < b.key ? 1 : -1
+  );
+  t.deepEqual([rSet, rSet2], result, "get doesn't works");
+  // ---
+  rSet.value = "get_by_regexp_new_call";
+  await rexp.update(/(.*)_for_regexp_func/)(rSet.value);
+  const resultUpdate = (await rexp.get(/(.*)_regexp_func/)).sort((a, b) =>
+    a.key < b.key ? 1 : -1
+  );
+  t.deepEqual([rSet, rSet2], resultUpdate, "update doesn't works");
+  // ---
+  await rexp.del(/(.*)_regexp_func/);
+  const resultDelete = await rexp.get(/(.*)_regexp_func/);
+  t.deepEqual([], resultDelete, "del doesn't works");
 });
 
 const valueForOn = "on_call";
@@ -321,12 +401,17 @@ test("Other - on event after key has been expired", async t => {
   })
     .then(() => t.pass())
     .catch(err => t.fail(`"on" event take too much time${err}`));
-  const verifyKeyAgain = await rexp.get("set_expiration_for_on");
-  t.deepEqual(
-    verifyKeyAgain,
-    [],
-    `"set_expiration_for_on" key hasn't been removed`
-  );
+  await new Promise(resolve => {
+    setTimeout(async () => {
+      const verifyKeyAgain = await rexp.get("set_expiration_for_on");
+      t.deepEqual(
+        verifyKeyAgain,
+        [],
+        `"set_expiration_for_on" key hasn't been removed`
+      );
+      resolve();
+    }, 100);
+  });
 });
 
 const valueForGet = "get_call";
@@ -349,6 +434,7 @@ test("Other - get/set/del/update functions", async t => {
     result,
     {
       value: valueForGet,
+      key: "set_expiration_for_get",
       expiration_type: "TIMEOUT",
       expiration_value: 100000,
       expiration_expression: 100000,
@@ -403,7 +489,7 @@ test("Other - no keys in redis", async t => {
     .multi()
     .keys(`set_expiration_for_*`)
     .execAsync()).shift();
-  t.deepEqual(verifyKey, [], `there are still traces of the test`);
+  t.deepEqual([], verifyKey, `there are still traces of the test`);
 });
 
 test.serial("Removing traces", async t =>
