@@ -41,6 +41,7 @@
     "bluebird": "^3.5.3",
     "cron-parser": "^2.7.3",
     "redis": "^2.8.0",
+    "regex-parser": "^2.2.9",
     "shortid": "^2.2.14"
   },
   "devDependencies": {

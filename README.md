@@ -3,21 +3,22 @@
 # redis-expiry
 Use redis to expire your keys and handling the value  
 
-## Features
+## 📋 Features
 * Schedule the expiration of your keys
 * Handling your keys and values
 * CRUD your scheduler + rescheduling
 * Save multiple values in a single key
 * Retrieve your value when the key expire
 * Add cron task
+* Retrieve/Search by regexp
 
-## Installation
+## ☁️ Installation
 
 ```
 $ npm install redis-expiry
 ```
 
-## Usage
+## 📝 Usage
 
 ### Initialization
 
@@ -38,6 +39,12 @@ The code bellow is deprecated since v1.0.4
 ```
 const rexp = redisExpiry(redisSetter, process.env.REDIS_URL);
 ```
+
+### Information
+
+⚠ If your application is shutdown and one of your keys expire, `redis-expiry` will detect them ⚠
+⚠ Then when your application will be operationnal, the event `rexp.on("myKey", callback)` will be called⚠ 
+
 
 ### Schedule a new scheduler
 
@@ -106,6 +113,14 @@ rexp.on("myKeyByTimeout", (value, key, stop) => {
   stop(); // stop cron task
 });
 ```
+  
+Using regexp :  
+``` js  
+rexp.on(/myKeyBy(.)/, (value, key, stop) => {
+  // value === "myValue"
+});
+```
+Every `myKeyBy*` key will be returned  
 
 ### Cancel scheduler
 
@@ -120,7 +135,19 @@ Remove specific contents by value:
 ``` js  
 await rexp.del("myKeyByTimeout", "myValue");
 ```
+  
+By regexp:  
 
+``` js  
+await rexp.del(/(.)Timeout/);
+```
+  
+By regexp with a value:  
+
+``` js  
+await rexp.del(/(.)Timeout/, "myValue");
+```
+   
 By guuid:  
 
 ``` js  
@@ -140,7 +167,19 @@ Return specific contents by value:
 ``` js  
 const result = await rexp.get("myKeyByTimeout", "myValue");
 ```
+  
+By regexp:  
 
+``` js  
+await rexp.get(/(.)Timeout/);
+```
+  
+By regexp with a value:  
+
+``` js  
+await rexp.get(/(.)Timeout/, "myValue");
+```
+   
 By guuid:  
 
 ``` js  
@@ -160,12 +199,25 @@ Update specific contents by value:
 ``` js  
 const result = await rexp.update("myKeyByTimeout", "myValue")("myNewValue");
 ```
+   
+By regexp:  
 
+``` js  
+await rexp.update(/(.)Timeout/)("myNewValue");
+```
+  
+By regexp with a value:  
+
+``` js  
+await rexp.update(/(.)Timeout/, "myValue")("myNewValue");
+```
+   
 By guuid:  
 
 ``` js  
 await rexp.updateByGuuid("Dzokijo")("myNewValue");
 ```
+
 
 ### Reschedule a scheduler
 
@@ -196,7 +248,19 @@ Reschedule all contents :
 ``` js  
 await rexp.reschedule("myKeyByTimeout").timeout(30000);
 ```
+  
+By regexp:  
 
+``` js  
+await rexp.reschedule(/(.)Timeout/).timeout(30000);
+```
+
+By regexp with a value:  
+
+``` js  
+await rexp.reschedule(/(.)Timeout/, "myValue").timeout(30000);
+```
+   
 Every contents is rescheduled with a timeout at 30 secs  
   
 By guuid:  
@@ -204,14 +268,14 @@ By guuid:
 ``` js  
 await rexp.rescheduleByGuuid("Dzokijo").timeout(30000);
 ```
-  
+
 **Chainable API**  
 Update value with `andUpdateValue` function :  
 ``` js  
 await rexp.rescheduleByGuuid("Dzokijo").andUpdateValue("myNewValue").timeout(30000);
 ```
 
-## Testing
+## ❓️ Testing
 
 Clone the repo and run from the project root:
 
@@ -220,7 +284,7 @@ $ npm install
 $ npm test
 ```
 
-## Examples
+## ⚙️ Examples
 
 ``` js  
 const Redis = require("redis");
