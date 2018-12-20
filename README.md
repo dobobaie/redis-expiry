@@ -42,7 +42,7 @@ const rexp = redisExpiry(redisSetter, process.env.REDIS_URL);
 
 ### Information
 
-⚠ If your application is shutdown and one of your keys expire, `redis-expiry` will detect them ⚠
+⚠ If your application is shutdown and one of your keys expire, `redis-expiry` will detect them ⚠   
 ⚠ Then when your application will be operationnal, the event `rexp.on("myKey", callback)` will be called⚠ 
 
 
