@@ -17,7 +17,32 @@ Use redis to expire your keys and handling the value
 ```
 $ npm install redis-expiry
 ```
+  
+## ⚙️ Examples
 
+``` js  
+const Redis = require("redis");
+const redisExpiry = require("redis-expiry");
+
+const redisSetter = Redis.createClient(process.env.REDIS_URL);
+const redisGetter = Redis.createClient(process.env.REDIS_URL);
+
+const rexp = redisExpiry(redisSetter, redisGetter);
+
+rexp.set("myKeyByTimeout", "myValue").timeout(60000); // key will be expire in 60sec
+
+const expireDate = new Date();
+expireDate.setSeconds(expireDate.getSeconds() + 60);
+rexp.set("myKeyByDate", "myValue").at(expireDate); // key will be expire in 60sec
+
+rexp.set("myKeyByCron", "myValue").cron("*/30 * * * * *"); // key will be expire every 30sec
+
+rexp.on(/myKeyBy(.)/, (value, key) => { // event will always be scheduled if the application restart
+  console.log("Value returned", value, "From key", key);
+});
+
+```
+   
 ## 📝 Usage
 
 ### Initialization
@@ -283,22 +308,3 @@ Clone the repo and run from the project root:
 $ npm install
 $ npm test
 ```
-
-## ⚙️ Examples
-
-``` js  
-const Redis = require("redis");
-const redisExpiry = require("redis-expiry");
-
-const redisSetter = Redis.createClient(process.env.REDIS_URL);
-const redisGetter = Redis.createClient(process.env.REDIS_URL);
-
-const rexp = redisExpiry(redisSetter, redisGetter);
-
-rexp.set("myKeyByTimeout", "myValue").timeout(60000) // key will be expire in 60sec
-  .catch(err => console.error(err));
-
-rexp.on("myKeyByTimeout", (value, key) => { // event will always be scheduled if the application restart
-  console.log("Value returned", value, "From key", key);
-});
-
