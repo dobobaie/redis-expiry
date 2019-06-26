@@ -1,13 +1,12 @@
 {
   "name": "redis-expiry",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Use redis to expire your keys and handling the value ",
   "main": "index.js",
   "scripts": {
     "test": "nyc ava --serial --verbose",
     "lint": "eslint . --fix",
-    "precommit": "lint-staged",
-    "commitmsg": "commitlint -E GIT_PARAMS"
+    "precommit": "lint-staged"
   },
   "lint-staged": {
     "*.js": [
