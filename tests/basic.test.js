@@ -41,7 +41,7 @@ test("Basic - Set function", async t => {
   const result = await rexp.set("set_expiration", "now_call");
   t.deepEqual(
     Object.keys(result),
-    ["timeout", "now", "at", "cron"],
+    ["infinit", "timeout", "now", "at", "cron"],
     "Invalid method returned"
   );
 });
@@ -254,14 +254,14 @@ test("Reschedule - Verify functions", async t => {
     .timeout(5000);
   t.deepEqual(
     Object.keys(await rexp.rescheduleByGuuid(result.guuid)),
-    ["andUpdateValue", "timeout", "now", "at", "cron"],
+    ["andUpdateValue", "infinit", "timeout", "now", "at", "cron"],
     `Invalid method returned with "andUpdateValue" function`
   );
   t.deepEqual(
     Object.keys(
       await rexp.rescheduleByGuuid(result.guuid).andUpdateValue("newValue")
     ),
-    ["timeout", "now", "at", "cron"],
+    ["infinit", "timeout", "now", "at", "cron"],
     "Invalid method returned"
   );
   await rexp.del("set_expiration_for_reschedule", valueForReschedule);
@@ -378,6 +378,30 @@ test("Regexp - get/del/update functions", async t => {
   await rexp.del(/(.*)_regexp_func/);
   const resultDelete = await rexp.get(/(.*)_regexp_func/);
   t.deepEqual([], resultDelete, "del doesn't works");
+});
+
+const valueForInfinit = "infinit_call";
+test("Other - Infinit function", async t => {
+  const verifyKey = await rexp.get("set_expiration_for_infinit");
+  t.deepEqual(verifyKey, [], `"set_expiration_for_infinit" key already exists`);
+  // ---
+  const dataInfinit = await rexp
+    .set("set_expiration_for_infinit", valueForInfinit)
+    .infinit();
+  const verifyKeyAgain = await rexp.get("set_expiration_for_infinit");
+  t.deepEqual(
+    verifyKeyAgain,
+    [dataInfinit],
+    `"set_expiration_for_infinit" key doesn't exists`
+  );
+  // ---
+  await rexp.del("set_expiration_for_infinit", valueForInfinit);
+  const verifyKeyAgain2 = await rexp.get("set_expiration_for_infinit");
+  t.deepEqual(
+    verifyKeyAgain2,
+    [],
+    `"set_expiration_for_infinit" key hasn't been removed`
+  );
 });
 
 const valueForOn = "on_call";
