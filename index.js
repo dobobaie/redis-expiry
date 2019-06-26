@@ -29,24 +29,26 @@ module.exports = (redisSetter, redisGetter) => {
     const currentDate = new Date().getTime();
     const guuid = shortid.generate().replace(/_/g, "-");
     await Promise.all([
-      redisSetter.setAsync(`${key}_${guuid}`, "", "PX", timeout),
+      timeout
+        ? redisSetter.setAsync(`${key}_${guuid}`, "", "PX", timeout)
+        : redisSetter.setAsync(`${key}_${guuid}`, ""),
       redisSetter.setAsync(`${key}_${guuid}_value`, value),
       redisSetter.setAsync(`${key}_${guuid}_guuid`, guuid),
       redisSetter.setAsync(`${key}_${guuid}_key`, key),
       redisSetter.setAsync(`${key}_${guuid}_expiration_type`, expirationType),
-      redisSetter.setAsync(`${key}_${guuid}_expiration_value`, timeout),
+      redisSetter.setAsync(`${key}_${guuid}_expiration_value`, timeout || ""),
       redisSetter.setAsync(
         `${key}_${guuid}_expiration_extra`,
         JSON.stringify(expirationExtra) || ""
       ),
       redisSetter.setAsync(
         `${key}_${guuid}_expiration_expression`,
-        expirationExpression
+        expirationExpression || ""
       ),
       redisSetter.setAsync(`${key}_${guuid}_create_at`, currentDate),
       redisSetter.setAsync(
         `${key}_${guuid}_expiration_at`,
-        currentDate + timeout * 100
+        timeout ? currentDate + timeout * 100 : ""
       )
     ]);
 
@@ -55,15 +57,16 @@ module.exports = (redisSetter, redisGetter) => {
       value,
       key,
       expiration_type: expirationType,
-      expiration_value: timeout,
+      expiration_value: timeout || undefined,
       expiration_extra: expirationExtra || undefined,
-      expiration_expression: expirationExpression,
+      expiration_expression: expirationExpression || undefined,
       created_at: currentDate,
-      expiration_at: currentDate + timeout * 100
+      expiration_at: timeout ? currentDate + timeout * 100 : undefined
     };
   };
 
   this.set = (key, value) => ({
+    infinit: () => scheduleEvent("INFINIT")(key, value),
     timeout: time => scheduleEvent("TIMEOUT", time)(key, value, time || 1),
     now: () => scheduleEvent("NOW", 1)(key, value, 1),
     at: date => {
@@ -196,15 +199,19 @@ module.exports = (redisSetter, redisGetter) => {
       value: redisValue,
       key: redisKey,
       expiration_type: redisExpirationType,
-      expiration_value: parseInt(redisExpirationValue, 10),
+      expiration_value: redisExpirationValue
+        ? parseInt(redisExpirationValue, 10)
+        : undefined,
       expiration_extra: ["CRON"].includes(redisExpirationType)
         ? jsonParse(redisExpirationExtra)
         : redisExpirationExtra || undefined,
       expiration_expression: ["TIMEOUT", "NOW"].includes(redisExpirationType)
         ? parseInt(redisExpirationExpression, 10)
-        : redisExpirationExpression,
+        : redisExpirationExpression || undefined,
       created_at: parseInt(redisCreatedAt, 10),
-      expiration_at: parseInt(redisExpirationAt, 10)
+      expiration_at: redisExpirationAt
+        ? parseInt(redisExpirationAt, 10)
+        : undefined
     };
   };
 
@@ -397,7 +404,10 @@ module.exports = (redisSetter, redisGetter) => {
     const list = await this.get(key);
     const currentDate = new Date();
     await Promise.map(list, async elements => {
-      if (parseInt(elements.expiration_at, 10) <= currentDate.getTime()) {
+      if (
+        elements.expiration_at &&
+        parseInt(elements.expiration_at, 10) <= currentDate.getTime()
+      ) {
         await executeEvents(elements.key, elements.value, elements.guuid)(
           elements.expiration_type,
           elements.expiration_expression,

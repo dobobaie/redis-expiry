@@ -79,6 +79,15 @@ Before choosing the type of expiration, you have to set the key/value:
 rexp.set("myKey", "myValue")...
 ```
 
+**rexp.set(...).infinit();**  
+A simple `redis set`:  
+``` js  
+await rexp.set("myKeyByInfinit", "myValue").infinit();
+```
+
+`myKeyByInfinit` will never expired.
+
+  
 **rexp.set(...).at(date);**  
 Schedule from a date:  
 ``` js  
