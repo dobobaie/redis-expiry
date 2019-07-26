@@ -44,7 +44,7 @@
     "shortid": "^2.2.14"
   },
   "devDependencies": {
-    "@commitlint/cli": "^8.0.0",
+    "@commitlint/cli": "^8.1.0",
     "ava": "^2.1.0",
     "eslint": "^6.0.1",
     "eslint-config-airbnb-base": "^13.1.0",
@@ -63,4 +63,3 @@
     ]
   }
 }
-
