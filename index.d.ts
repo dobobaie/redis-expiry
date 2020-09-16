@@ -4,7 +4,7 @@ declare module 'redis-expiry' {
   
   export interface RexpNativeReturn {
     guuid?: string;
-    value?: any;
+    value?: string;
     key?: string;
     expiration_type?: 'INFINIT' | 'TIMEOUT' | 'NOW' | 'AT' | 'CRON';
     expiration_value?: number;
@@ -21,12 +21,14 @@ declare module 'redis-expiry' {
     cron: (expression: string, options?: any) => Promise<RexpNativeReturn>;
   };
   export type RexpLib = {
-    on: (key: string, callback: (value: any, key: string, stopInterval?: Function) => void) => Promise<void>;
-    set: (key: string, value?: any) => RexpSet;
+    redisSetter: RedisClient;
+    redisGetter: RedisClient;
+    on: (key: string, callback: (value: string, key: string, stopInterval?: Function) => void) => Promise<void>;
+    set: (key: string, value?: string) => RexpSet;
     getByKeyGuuid: (key: string, guuid: string) => Promise<RexpNativeReturn>;
     getByGuuid: (guuid: string) => Promise<RexpNativeReturn>;
-    // getByRegexp: (regexp: string, value?: any) => Promise<RexpNativeReturn>;
-    get: (key: string, value?: any) => Promise<RexpNativeReturn>;
+    // getByRegexp: (regexp: string, value?: string) => Promise<RexpNativeReturn>;
+    get: (key: string, value?: string) => Promise<RexpNativeReturn>;
     delByKeyGuuid: (key: string, guuid: string) => Promise<number[]>;
     delByGuuid: (guuid: string) => Promise<number[]>;
     // delByRegexp: (key: string, value: string) => Promise<number[]>;
