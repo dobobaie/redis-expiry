@@ -18,8 +18,8 @@ const jsonParse = str => {
 };
 
 module.exports = (redisSetter, redisGetter) => {
-  this.redisSetter = redisSetter;
-  this.redisGetter = redisGetter;
+  this.redisSetter = Promise.promisifyAll(redisSetter);
+  this.redisGetter = Promise.promisifyAll(redisGetter);
 
   const scheduleEvent = (
     expirationType,
@@ -30,23 +30,23 @@ module.exports = (redisSetter, redisGetter) => {
     const guuid = shortid.generate().replace(/_/g, "-");
     await Promise.all([
       timeout
-        ? redisSetter.setAsync(`${key}_${guuid}`, "", "PX", timeout)
-        : redisSetter.setAsync(`${key}_${guuid}`, ""),
-      redisSetter.setAsync(`${key}_${guuid}_value`, value),
-      redisSetter.setAsync(`${key}_${guuid}_guuid`, guuid),
-      redisSetter.setAsync(`${key}_${guuid}_key`, key),
-      redisSetter.setAsync(`${key}_${guuid}_expiration_type`, expirationType),
-      redisSetter.setAsync(`${key}_${guuid}_expiration_value`, timeout || ""),
-      redisSetter.setAsync(
+        ? this.redisSetter.setAsync(`${key}_${guuid}`, "", "PX", timeout)
+        : this.redisSetter.setAsync(`${key}_${guuid}`, ""),
+      this.redisSetter.setAsync(`${key}_${guuid}_value`, value),
+      this.redisSetter.setAsync(`${key}_${guuid}_guuid`, guuid),
+      this.redisSetter.setAsync(`${key}_${guuid}_key`, key),
+      this.redisSetter.setAsync(`${key}_${guuid}_expiration_type`, expirationType),
+      this.redisSetter.setAsync(`${key}_${guuid}_expiration_value`, timeout || ""),
+      this.redisSetter.setAsync(
         `${key}_${guuid}_expiration_extra`,
         JSON.stringify(expirationExtra) || ""
       ),
-      redisSetter.setAsync(
+      this.redisSetter.setAsync(
         `${key}_${guuid}_expiration_expression`,
         expirationExpression || ""
       ),
-      redisSetter.setAsync(`${key}_${guuid}_create_at`, currentDate),
-      redisSetter.setAsync(
+      this.redisSetter.setAsync(`${key}_${guuid}_create_at`, currentDate),
+      this.redisSetter.setAsync(
         `${key}_${guuid}_expiration_at`,
         timeout ? currentDate + timeout * 100 : ""
       )
@@ -93,7 +93,7 @@ module.exports = (redisSetter, redisGetter) => {
 
   const getAllByRegexp = async (regexp, value) =>
     Promise.reduce(
-      (await redisSetter
+      (await this.redisSetter
         .multi()
         .keys(`*_guuid`)
         .execAsync()).shift(),
@@ -108,7 +108,7 @@ module.exports = (redisSetter, redisGetter) => {
           currentValue.length - "_guuid".length - guuid.length - 1
         );
         if (!guuid || cObject[guuid]) return accumulator;
-        const redisValue = await redisSetter.getAsync(`${key}_${guuid}_value`);
+        const redisValue = await this.redisSetter.getAsync(`${key}_${guuid}_value`);
         if (
           (typeof regexp === "string" &&
             !RegExp(RegexParser(regexp)).test(key)) ||
@@ -126,10 +126,14 @@ module.exports = (redisSetter, redisGetter) => {
   const getAllGuuidByKey = async (key, value) =>
     Object.values(
       await Promise.reduce(
-        (await redisSetter
-          .multi()
-          .keys(`${key}_*_guuid`)
-          .execAsync()).shift(),
+        (await new Promise((resolve, reject) =>
+          this.redisSetter
+            .multi()
+            .keys(`${key}_*_guuid`)
+            .exec((err, result) =>
+              err ? reject(err) : resolve(result)
+            )
+        )).shift(),
         async (accumulator, currentValue) => {
           const cObject = accumulator;
           const guuid = currentValue
@@ -137,7 +141,7 @@ module.exports = (redisSetter, redisGetter) => {
             .split("_")
             .shift();
           if (!guuid || cObject[guuid]) return accumulator;
-          const redisValue = await redisSetter.getAsync(
+          const redisValue = await this.redisSetter.getAsync(
             `${key}_${guuid}_value`
           );
           if (value && value !== redisValue) {
@@ -153,7 +157,7 @@ module.exports = (redisSetter, redisGetter) => {
   const getAllKeysByGuuid = async guuid =>
     Object.values(
       await Promise.reduce(
-        (await redisSetter
+        (await this.redisSetter
           .multi()
           .keys(`*_${guuid}_guuid`)
           .execAsync()).shift(),
@@ -172,25 +176,25 @@ module.exports = (redisSetter, redisGetter) => {
     );
 
   this.getByKeyGuuid = async (key, guuid) => {
-    const redisValue = await redisSetter.getAsync(`${key}_${guuid}_value`);
-    const redisGuuid = await redisSetter.getAsync(`${key}_${guuid}_guuid`);
-    const redisKey = await redisSetter.getAsync(`${key}_${guuid}_key`);
-    const redisExpirationType = await redisSetter.getAsync(
+    const redisValue = await this.redisSetter.getAsync(`${key}_${guuid}_value`);
+    const redisGuuid = await this.redisSetter.getAsync(`${key}_${guuid}_guuid`);
+    const redisKey = await this.redisSetter.getAsync(`${key}_${guuid}_key`);
+    const redisExpirationType = await this.redisSetter.getAsync(
       `${key}_${guuid}_expiration_type`
     );
-    const redisExpirationValue = await redisSetter.getAsync(
+    const redisExpirationValue = await this.redisSetter.getAsync(
       `${key}_${guuid}_expiration_value`
     );
-    const redisExpirationExtra = await redisSetter.getAsync(
+    const redisExpirationExtra = await this.redisSetter.getAsync(
       `${key}_${guuid}_expiration_extra`
     );
-    const redisExpirationExpression = await redisSetter.getAsync(
+    const redisExpirationExpression = await this.redisSetter.getAsync(
       `${key}_${guuid}_expiration_expression`
     );
-    const redisCreatedAt = await redisSetter.getAsync(
+    const redisCreatedAt = await this.redisSetter.getAsync(
       `${key}_${guuid}_create_at`
     );
-    const redisExpirationAt = await redisSetter.getAsync(
+    const redisExpirationAt = await this.redisSetter.getAsync(
       `${key}_${guuid}_expiration_at`
     );
 
@@ -236,16 +240,16 @@ module.exports = (redisSetter, redisGetter) => {
 
   this.delByKeyGuuid = (key, guuid) =>
     Promise.all([
-      redisSetter.del(`${key}_${guuid}`),
-      redisSetter.del(`${key}_${guuid}_value`),
-      redisSetter.del(`${key}_${guuid}_guuid`),
-      redisSetter.del(`${key}_${guuid}_key`),
-      redisSetter.del(`${key}_${guuid}_expiration_type`),
-      redisSetter.del(`${key}_${guuid}_expiration_value`),
-      redisSetter.del(`${key}_${guuid}_expiration_extra`),
-      redisSetter.del(`${key}_${guuid}_expiration_expression`),
-      redisSetter.del(`${key}_${guuid}_create_at`),
-      redisSetter.del(`${key}_${guuid}_expiration_at`)
+      this.redisSetter.del(`${key}_${guuid}`),
+      this.redisSetter.del(`${key}_${guuid}_value`),
+      this.redisSetter.del(`${key}_${guuid}_guuid`),
+      this.redisSetter.del(`${key}_${guuid}_key`),
+      this.redisSetter.del(`${key}_${guuid}_expiration_type`),
+      this.redisSetter.del(`${key}_${guuid}_expiration_value`),
+      this.redisSetter.del(`${key}_${guuid}_expiration_extra`),
+      this.redisSetter.del(`${key}_${guuid}_expiration_expression`),
+      this.redisSetter.del(`${key}_${guuid}_create_at`),
+      this.redisSetter.del(`${key}_${guuid}_expiration_at`)
     ]);
 
   this.delByGuuid = async guuid =>
@@ -268,7 +272,7 @@ module.exports = (redisSetter, redisGetter) => {
         );
 
   this.updateByKeyGuuid = (key, guuid) => toUpdate =>
-    redisSetter.set(`${key}_${guuid}_value`, toUpdate);
+    this.redisSetter.set(`${key}_${guuid}_value`, toUpdate);
 
   this.updateByGuuid = guuid => async toUpdate =>
     Promise.map(await getAllKeysByGuuid(guuid), async key =>
@@ -325,7 +329,7 @@ module.exports = (redisSetter, redisGetter) => {
         type === "andUpdateValue"
           ? andUpdateValue(key, guuid)(expression)
           : (async () => {
-              const value = await redisSetter.getAsync(`${key}_${guuid}_value`);
+              const value = await this.redisSetter.getAsync(`${key}_${guuid}_value`);
               await this.delByKeyGuuid(key, guuid);
               return this.set(key, value)[type](expression, options);
             })(),
@@ -445,17 +449,17 @@ module.exports = (redisSetter, redisGetter) => {
         []
       );
 
-  if (typeof redisGetter === "string") {
+  if (typeof this.redisGetter === "string") {
     // eslint-disable-next-line no-console
     console.log(
-      `Redis-expiry: use redisGetter as string is deprecated. It will be remove in the next version.`
+      `Redis-expiry: use this.redisGetter as string is deprecated. It will be remove in the next version.`
     );
   }
 
   const redisSubscriber =
-    typeof redisGetter === "string"
-      ? Redis.createClient(redisGetter)
-      : redisGetter;
+    typeof this.redisGetter === "string"
+      ? Redis.createClient(this.redisGetter)
+      : this.redisGetter;
   redisSubscriber.config("set", "notify-keyspace-events", "Ex");
 
   redisSubscriber.on("pmessage", async (pattern, channel, expiredKey) => {
@@ -469,14 +473,14 @@ module.exports = (redisSetter, redisGetter) => {
     ];
 
     if (listCallbacks.length) {
-      const value = await redisSetter.getAsync(`${key}_${guuid}_value`);
-      const expirationType = await redisSetter.getAsync(
+      const value = await this.redisSetter.getAsync(`${key}_${guuid}_value`);
+      const expirationType = await this.redisSetter.getAsync(
         `${key}_${guuid}_expiration_type`
       );
-      const expirationExpression = await redisSetter.getAsync(
+      const expirationExpression = await this.redisSetter.getAsync(
         `${key}_${guuid}_expiration_expression`
       );
-      const expirationExtra = await redisSetter.getAsync(
+      const expirationExtra = await this.redisSetter.getAsync(
         `${key}_${guuid}_expiration_extra`
       );
       await executeEvents(key, value, guuid)(
