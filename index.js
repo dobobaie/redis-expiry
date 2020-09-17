@@ -2,10 +2,6 @@ const Promise = require("bluebird");
 const shortid = require("shortid");
 const cronParser = require("cron-parser");
 const RegexParser = require("regex-parser");
-const Redis = require("redis");
-
-Promise.promisifyAll(Redis.RedisClient.prototype);
-Promise.promisifyAll(Redis.Multi.prototype);
 
 const jsonParse = str => {
   try {
@@ -35,8 +31,14 @@ module.exports = (redisSetter, redisGetter) => {
       this.redisSetter.setAsync(`${key}_${guuid}_value`, value),
       this.redisSetter.setAsync(`${key}_${guuid}_guuid`, guuid),
       this.redisSetter.setAsync(`${key}_${guuid}_key`, key),
-      this.redisSetter.setAsync(`${key}_${guuid}_expiration_type`, expirationType),
-      this.redisSetter.setAsync(`${key}_${guuid}_expiration_value`, timeout || ""),
+      this.redisSetter.setAsync(
+        `${key}_${guuid}_expiration_type`,
+        expirationType
+      ),
+      this.redisSetter.setAsync(
+        `${key}_${guuid}_expiration_value`,
+        timeout || ""
+      ),
       this.redisSetter.setAsync(
         `${key}_${guuid}_expiration_extra`,
         JSON.stringify(expirationExtra) || ""
@@ -45,7 +47,7 @@ module.exports = (redisSetter, redisGetter) => {
         `${key}_${guuid}_expiration_expression`,
         expirationExpression || ""
       ),
-      this.redisSetter.setAsync(`${key}_${guuid}_create_at`, currentDate),
+      this.redisSetter.setAsync(`${key}_${guuid}_created_at`, currentDate),
       this.redisSetter.setAsync(
         `${key}_${guuid}_expiration_at`,
         timeout ? currentDate + timeout * 100 : ""
@@ -93,10 +95,12 @@ module.exports = (redisSetter, redisGetter) => {
 
   const getAllByRegexp = async (regexp, value) =>
     Promise.reduce(
-      (await this.redisSetter
-        .multi()
-        .keys(`*_guuid`)
-        .execAsync()).shift(),
+      (await new Promise((resolve, reject) =>
+        this.redisSetter
+          .multi()
+          .keys(`*_guuid`)
+          .exec((err, result) => (err ? reject(err) : resolve(result)))
+      )).shift(),
       async (accumulator, currentValue) => {
         const cObject = accumulator;
         const guuid = currentValue
@@ -108,7 +112,9 @@ module.exports = (redisSetter, redisGetter) => {
           currentValue.length - "_guuid".length - guuid.length - 1
         );
         if (!guuid || cObject[guuid]) return accumulator;
-        const redisValue = await this.redisSetter.getAsync(`${key}_${guuid}_value`);
+        const redisValue = await this.redisSetter.getAsync(
+          `${key}_${guuid}_value`
+        );
         if (
           (typeof regexp === "string" &&
             !RegExp(RegexParser(regexp)).test(key)) ||
@@ -124,15 +130,13 @@ module.exports = (redisSetter, redisGetter) => {
     );
 
   const getAllGuuidByKey = async (key, value) =>
-    Object.values(
+    Object.keys(
       await Promise.reduce(
         (await new Promise((resolve, reject) =>
           this.redisSetter
             .multi()
             .keys(`${key}_*_guuid`)
-            .exec((err, result) =>
-              err ? reject(err) : resolve(result)
-            )
+            .exec((err, result) => (err ? reject(err) : resolve(result)))
         )).shift(),
         async (accumulator, currentValue) => {
           const cObject = accumulator;
@@ -147,7 +151,7 @@ module.exports = (redisSetter, redisGetter) => {
           if (value && value !== redisValue) {
             return accumulator;
           }
-          cObject[key] = guuid;
+          cObject[guuid] = key;
           return cObject;
         },
         {}
@@ -157,10 +161,12 @@ module.exports = (redisSetter, redisGetter) => {
   const getAllKeysByGuuid = async guuid =>
     Object.values(
       await Promise.reduce(
-        (await this.redisSetter
-          .multi()
-          .keys(`*_${guuid}_guuid`)
-          .execAsync()).shift(),
+        (await new Promise((resolve, reject) =>
+          this.redisSetter
+            .multi()
+            .keys(`*_${guuid}_guuid`)
+            .exec((err, result) => (err ? reject(err) : resolve(result)))
+        )).shift(),
         async (accumulator, currentValue) => {
           const cObject = accumulator;
           const key = currentValue.substring(
@@ -192,7 +198,7 @@ module.exports = (redisSetter, redisGetter) => {
       `${key}_${guuid}_expiration_expression`
     );
     const redisCreatedAt = await this.redisSetter.getAsync(
-      `${key}_${guuid}_create_at`
+      `${key}_${guuid}_created_at`
     );
     const redisExpirationAt = await this.redisSetter.getAsync(
       `${key}_${guuid}_expiration_at`
@@ -248,7 +254,7 @@ module.exports = (redisSetter, redisGetter) => {
       this.redisSetter.del(`${key}_${guuid}_expiration_value`),
       this.redisSetter.del(`${key}_${guuid}_expiration_extra`),
       this.redisSetter.del(`${key}_${guuid}_expiration_expression`),
-      this.redisSetter.del(`${key}_${guuid}_create_at`),
+      this.redisSetter.del(`${key}_${guuid}_created_at`),
       this.redisSetter.del(`${key}_${guuid}_expiration_at`)
     ]);
 
@@ -329,7 +335,9 @@ module.exports = (redisSetter, redisGetter) => {
         type === "andUpdateValue"
           ? andUpdateValue(key, guuid)(expression)
           : (async () => {
-              const value = await this.redisSetter.getAsync(`${key}_${guuid}_value`);
+              const value = await this.redisSetter.getAsync(
+                `${key}_${guuid}_value`
+              );
               await this.delByKeyGuuid(key, guuid);
               return this.set(key, value)[type](expression, options);
             })(),
@@ -449,20 +457,10 @@ module.exports = (redisSetter, redisGetter) => {
         []
       );
 
-  if (typeof this.redisGetter === "string") {
-    // eslint-disable-next-line no-console
-    console.log(
-      `Redis-expiry: use this.redisGetter as string is deprecated. It will be remove in the next version.`
-    );
-  }
-
-  const redisSubscriber =
-    typeof this.redisGetter === "string"
-      ? Redis.createClient(this.redisGetter)
-      : this.redisGetter;
-  redisSubscriber.config("set", "notify-keyspace-events", "Ex");
-
-  redisSubscriber.on("pmessage", async (pattern, channel, expiredKey) => {
+  // ---
+  this.redisGetter.config("set", "notify-keyspace-events", "Ex");
+  this.redisGetter.psubscribe("__keyevent@0__:expired");
+  this.redisGetter.on("pmessage", async (_, __, expiredKey) => {
     const keys = expiredKey.split("_");
     const guuid = keys.pop();
     const key = keys.join("_");
@@ -490,7 +488,6 @@ module.exports = (redisSetter, redisGetter) => {
       )(listCallbacks);
     }
   });
-  redisSubscriber.psubscribe("__keyevent@0__:expired");
 
   return this;
 };
