@@ -138,6 +138,8 @@ The handler will be call every time a specified key expires:
 ``` js  
 rexp.on("myKeyByTimeout", (value, key) => {
   // value === "myValue"
+}, {
+  maxConcurrent: 1 // Synchro event
 });
 ```
  

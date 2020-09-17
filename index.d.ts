@@ -2,6 +2,9 @@
 declare module 'redis-expiry' {
   import { RedisClient } from 'redis';
   
+  export interface EventOptions {
+    maxConcurrent?: number;
+  }
   export interface RexpNativeReturn {
     guuid?: string;
     value?: string;
@@ -23,7 +26,7 @@ declare module 'redis-expiry' {
   export type RexpLib = {
     redisSetter: RedisClient;
     redisGetter: RedisClient;
-    on: (key: string, callback: (value: string, key: string, stopInterval?: Function) => void) => Promise<void>;
+    on: (key: string, callback: (value: string, key: string, stopInterval?: Function) => void, options?: EventOptions) => Promise<void>;
     set: (key: string, value?: string) => RexpSet;
     getByKeyGuuid: (key: string, guuid: string) => Promise<RexpNativeReturn>;
     getByGuuid: (guuid: string) => Promise<RexpNativeReturn>;

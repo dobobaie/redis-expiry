@@ -2,6 +2,9 @@ const Promise = require("bluebird");
 const shortid = require("shortid");
 const cronParser = require("cron-parser");
 const RegexParser = require("regex-parser");
+const Queue = require("promise-queue");
+
+Queue.configure(Promise);
 
 const jsonParse = str => {
   try {
@@ -50,7 +53,7 @@ module.exports = (redisSetter, redisGetter) => {
       this.redisSetter.setAsync(`${key}_${guuid}_created_at`, currentDate),
       this.redisSetter.setAsync(
         `${key}_${guuid}_expiration_at`,
-        timeout ? currentDate + timeout * 100 : ""
+        timeout ? currentDate + timeout : ""
       )
     ]);
 
@@ -63,7 +66,7 @@ module.exports = (redisSetter, redisGetter) => {
       expiration_extra: expirationExtra || undefined,
       expiration_expression: expirationExpression || undefined,
       created_at: currentDate,
-      expiration_at: timeout ? currentDate + timeout * 100 : undefined
+      expiration_at: timeout ? currentDate + timeout : undefined
     };
   };
 
@@ -392,27 +395,39 @@ module.exports = (redisSetter, redisGetter) => {
           { andUpdateValue }
         );
 
-  const executeEvents = (key, value, guuid) => (
+  const listQueues = [];
+  const executeEvents = (key, value, guuid) => async (
     expirationType,
     expirationExpression,
     expirationExtra
-  ) => async list => {
+  ) => {
     let isInterval = expirationType === "CRON";
-    if (value && !Number.isNaN(value)) {
-      await Promise.map(list, cb =>
-        cb(value, key, () => {
-          isInterval = false;
-        })
-      );
-      if (isInterval) {
-        const extra = jsonParse(expirationExtra);
-        await this.set(key, value).cron(expirationExpression, extra);
+    let queueFound = false;
+    listQueues.map(element => {
+      if (
+        typeof element.key === "string"
+          ? element.key === key
+          : RegExp(RegexParser(element.key)).test(key)
+      ) {
+        queueFound = true;
+        element.queue.add(() =>
+          element.cb(value, key, () => {
+            isInterval = false;
+          })
+        );
       }
+      return null;
+    });
+    if (isInterval) {
+      const extra = jsonParse(expirationExtra);
+      await this.set(key, value).cron(expirationExpression, extra);
     }
-    await this.delByKeyGuuid(key, guuid);
+    if (queueFound) {
+      await this.delByKeyGuuid(key, guuid);
+    }
   };
 
-  const verifyKeyExpired = async (key, cb) => {
+  const verifyKeyExpired = async key => {
     const list = await this.get(key);
     const currentDate = new Date();
     await Promise.map(list, async elements => {
@@ -424,38 +439,19 @@ module.exports = (redisSetter, redisGetter) => {
           elements.expiration_type,
           elements.expiration_expression,
           elements.expiration_extra
-        )([cb]);
+        );
       }
     });
   };
 
-  const listEvents = {};
-  const listRegexp = {};
-  this.on = async (key, cb) => {
-    if (typeof key === "string") {
-      listEvents[key] = listEvents[key] || [];
-      listEvents[key].push(cb);
-    }
-    if (typeof key === "object") {
-      const indexKey = key.toString();
-      listRegexp[indexKey] = listRegexp[indexKey] || [];
-      listRegexp[indexKey].push(cb);
-    }
-    await verifyKeyExpired(key, cb);
+  this.on = async (key, cb, options) => {
+    listQueues.push({
+      key,
+      cb,
+      queue: new Queue((options && options.maxConcurrent) || Infinity, Infinity)
+    });
+    await verifyKeyExpired(key); // TODO: move it somewhere else ?
   };
-
-  const listRegexpMatched = key =>
-    Object.keys(listRegexp)
-      .map(index =>
-        RegExp(RegexParser(index)).test(key) ? listRegexp[index] : null
-      )
-      .reduce(
-        (accumulator, currentValue) => [
-          ...accumulator,
-          ...(currentValue || [])
-        ],
-        []
-      );
 
   // ---
   this.redisGetter.config("set", "notify-keyspace-events", "Ex");
@@ -465,28 +461,24 @@ module.exports = (redisSetter, redisGetter) => {
     const guuid = keys.pop();
     const key = keys.join("_");
 
-    const listCallbacks = [
-      ...(listEvents[key] || []),
-      ...(listRegexpMatched(key) || [])
-    ];
+    // ---
+    const value = await this.redisSetter.getAsync(`${key}_${guuid}_value`);
+    const expirationType = await this.redisSetter.getAsync(
+      `${key}_${guuid}_expiration_type`
+    );
+    const expirationExpression = await this.redisSetter.getAsync(
+      `${key}_${guuid}_expiration_expression`
+    );
+    const expirationExtra = await this.redisSetter.getAsync(
+      `${key}_${guuid}_expiration_extra`
+    );
 
-    if (listCallbacks.length) {
-      const value = await this.redisSetter.getAsync(`${key}_${guuid}_value`);
-      const expirationType = await this.redisSetter.getAsync(
-        `${key}_${guuid}_expiration_type`
-      );
-      const expirationExpression = await this.redisSetter.getAsync(
-        `${key}_${guuid}_expiration_expression`
-      );
-      const expirationExtra = await this.redisSetter.getAsync(
-        `${key}_${guuid}_expiration_extra`
-      );
-      await executeEvents(key, value, guuid)(
-        expirationType,
-        expirationExpression,
-        expirationExtra
-      )(listCallbacks);
-    }
+    // ---
+    await executeEvents(key, value, guuid)(
+      expirationType,
+      expirationExpression,
+      expirationExtra
+    );
   });
 
   return this;
