@@ -35,15 +35,15 @@ declare module 'redis-expiry' {
     delByKeyGuuid: (key: string, guuid: string) => Promise<number[]>;
     delByGuuid: (guuid: string) => Promise<number[]>;
     // delByRegexp: (key: string, value: string) => Promise<number[]>;
-    del: (key: string, value: string) => Promise<number[]>;
+    del: (key: string, value?: string) => Promise<number[]>;
     updateByKeyGuuid: (key: string, guuid: string) => Promise<void>;
     updateByGuuid: (guuid: string) => Promise<void>;
     // updateByRegexp: (key: string, value: string) => Promise<void>;
-    update: (key: string, value: string) => Promise<void>;
+    update: (key: string, value?: string) => Promise<void>;
     rescheduleByKeyGuuid: (key: string, guuid: string) => Promise<RexpNativeReturn>;
     rescheduleByGuuid: (guuid: string) => Promise<RexpNativeReturn>;
     // rescheduleByRegexp: (key: string, value: string) => Promise<RexpNativeReturn>;
-    reschedule: (key: string, value: string) => Promise<RexpNativeReturn>;
+    reschedule: (key: string, value?: string) => Promise<RexpNativeReturn>;
   };
   export function redisExpiry(redisSetter: RedisClient, redisGetter: RedisClient): RexpLib;
   export default redisExpiry;
