@@ -245,7 +245,9 @@ module.exports = (redisSetter, redisGetter) => {
     const result = await getAllByRegexp(regexp, value);
     return (await Promise.map(Object.keys(result), async guuid =>
       this.getByKeyGuuid(result[guuid], guuid)
-    )).filter(elem => elem);
+    ))
+      .filter(elem => elem)
+      .shift();
   };
 
   this.get = async (key, value) =>
@@ -253,7 +255,9 @@ module.exports = (redisSetter, redisGetter) => {
       ? getByRegexp(key, value)
       : (await Promise.map(await getAllGuuidByKey(key, value), async guuid =>
           this.getByKeyGuuid(key, guuid)
-        )).filter(elem => elem);
+        ))
+          .filter(elem => elem)
+          .shift();
 
   this.delByKeyGuuid = (key, guuid) =>
     Promise.all([

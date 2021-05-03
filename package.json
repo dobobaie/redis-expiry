@@ -1,6 +1,6 @@
 {
     "name": "redis-expiry",
-    "version": "1.1.6",
+    "version": "1.1.7",
     "description": "Use redis to expire your keys and handling the value ",
     "main": "index.js",
     "scripts": {
