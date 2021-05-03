@@ -29,8 +29,7 @@ module.exports = (redisSetter, redisGetter) => {
     expirationExtra
   ) => async (key, value, timeout) => {
     if (expirationType === "CRON") {
-      const cron = await this.get(key, value);
-      const item = cron.pop();
+      const item = await this.get(key, value);
       if (item) {
         return item;
       }
@@ -440,20 +439,18 @@ module.exports = (redisSetter, redisGetter) => {
   };
 
   const verifyKeyExpired = async key => {
-    const list = await this.get(key);
+    const element = await this.get(key);
     const currentDate = new Date();
-    await Promise.map(list, async elements => {
-      if (
-        elements.expiration_at &&
-        parseInt(elements.expiration_at, 10) <= currentDate.getTime()
-      ) {
-        await executeEvents(elements.key, elements.value, elements.guuid)(
-          elements.expiration_type,
-          elements.expiration_expression,
-          elements.expiration_extra
-        );
-      }
-    });
+    if (
+      element.expiration_at &&
+      parseInt(element.expiration_at, 10) <= currentDate.getTime()
+    ) {
+      await executeEvents(element.key, element.value, element.guuid)(
+        element.expiration_type,
+        element.expiration_expression,
+        element.expiration_extra
+      );
+    }
   };
 
   this.on = async (key, cb, options) => {
